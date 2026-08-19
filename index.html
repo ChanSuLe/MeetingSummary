@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="description" content="MeetingSummary - lightweight meeting recorder and summary workspace">
+  <title>MeetingSummary</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">MEETING ASSISTANT</p>
+        <h1>MeetingSummary</h1>
+        <p class="subtitle">Record, transcribe, organize decisions, and track action items.</p>
+      </div>
+      <div id="statusBadge" class="status-badge">Ready</div>
+    </header>
+
+    <section class="card">
+      <div class="section-heading">
+        <div>
+          <h2>Meeting Recorder</h2>
+          <p>Record audio directly from your browser.</p>
+        </div>
+        <div id="timer" class="timer">00:00:00</div>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn" class="btn primary" type="button">Start Recording</button>
+        <button id="pauseBtn" class="btn secondary" type="button" disabled>Pause</button>
+        <button id="stopBtn" class="btn danger" type="button" disabled>Stop</button>
+      </div>
+
+      <div class="recording-meta">
+        <label>
+          <span>Meeting language</span>
+          <select id="languageSelect">
+            <option value="id-ID">Bahasa Indonesia</option>
+            <option value="en-US">English</option>
+            <option value="zh-CN">简体中文 (Mandarin)</option>
+          </select>
+        </label>
+
+        <label>
+          <span>Summary language</span>
+          <select id="summaryLanguageSelect">
+            <option value="id">Bahasa Indonesia</option>
+            <option value="en">English</option>
+            <option value="zh">简体中文</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="recordingInfo" class="info-box" hidden></div>
+      <audio id="audioPreview" controls hidden></audio>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <div>
+          <h2>Upload Existing Recording</h2>
+          <p>Choose an audio file already stored on your device.</p>
+        </div>
+      </div>
+
+      <label class="file-picker">
+        <span>Select audio file</span>
+        <input id="audioFile" type="file" accept="audio/*">
+      </label>
+
+      <div id="fileInfo" class="info-box" hidden></div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <div class="section-heading">
+          <div>
+            <h2>Transcript</h2>
+            <p>You can edit the transcript manually.</p>
+          </div>
+          <span id="speechStatus" class="mini-status">Not started</span>
+        </div>
+
+        <textarea id="transcript" rows="14" placeholder="Transcript will appear here..."></textarea>
+
+        <div class="button-row">
+          <button id="speechBtn" class="btn secondary" type="button">Start Browser Transcription</button>
+          <button id="clearTranscriptBtn" class="btn ghost" type="button">Clear</button>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="section-heading">
+          <div>
+            <h2>Meeting Summary</h2>
+            <p>Local summary for testing. No API key is required.</p>
+          </div>
+        </div>
+
+        <div class="summary-block">
+          <h3>Overview</h3>
+          <div id="summaryOverview" class="output">No summary yet.</div>
+        </div>
+
+        <div class="summary-block">
+          <h3>Key Decisions</h3>
+          <ul id="decisionsList" class="output-list">
+            <li>No decisions extracted yet.</li>
+          </ul>
+        </div>
+
+        <div class="summary-block">
+          <h3>Action Items</h3>
+          <ul id="actionsList" class="output-list">
+            <li>No action items extracted yet.</li>
+          </ul>
+        </div>
+
+        <button id="generateBtn" class="btn primary full" type="button">
+          Generate Local Summary
+        </button>
+      </article>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <div>
+          <h2>Export & Local Data</h2>
+          <p>Save the current draft in this browser or export a text report.</p>
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button id="exportBtn" class="btn secondary" type="button">Export Meeting TXT</button>
+        <button id="saveBtn" class="btn secondary" type="button">Save Draft Locally</button>
+        <button id="clearAllBtn" class="btn ghost" type="button">Clear Meeting</button>
+      </div>
+
+      <p class="privacy-note">
+        This prototype does not send transcript text or audio to a server.
+      </p>
+    </section>
+
+    <footer>
+      <span>MeetingSummary v0.1</span>
+      <span>Local-first • No API key required</span>
+    </footer>
+  </main>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
