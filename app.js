@@ -32,78 +32,158 @@
     stream: null,
     recorder: null,
     chunks: [],
-    recordingStartedAt: 0,
-    elapsedBeforePause: 0,
-    timerId: null,
+
+    // Timer state
+    timerStartedAt: null,
+    accumulatedMs: 0,
+    timerInterval: null,
+
+    // Audio
     audioUrl: null,
+    selectedAudioFile: null,
+
+    // Speech recognition
     recognition: null,
     recognitionRunning: false,
     transcriptBeforeSpeech: "",
-    selectedAudioFile: null
+
+    // Recording state
+    recordingState: "inactive"
   };
 
-  const STORAGE_KEY = "meetingSummaryDraftV01";
+  const STORAGE_KEY =
+    "meetingSummaryDraftV02";
+
+  /* =========================================================
+     STATUS
+  ========================================================= */
 
   function setStatus(text, type = "") {
     els.statusBadge.textContent = text;
-    els.statusBadge.className = `status-badge ${type}`;
+    els.statusBadge.className =
+      `status-badge ${type}`.trim();
   }
 
+  function showRecordingInfo(message) {
+    els.recordingInfo.hidden = false;
+    els.recordingInfo.textContent = message;
+  }
+
+  /* =========================================================
+     TIMER
+  ========================================================= */
+
   function formatTime(totalSeconds) {
-    const seconds = Math.max(0, Math.floor(totalSeconds));
-    const hours = String(Math.floor(seconds / 3600)).padStart(2, "0");
+    const seconds = Math.max(
+      0,
+      Math.floor(totalSeconds)
+    );
+
+    const hours = String(
+      Math.floor(seconds / 3600)
+    ).padStart(2, "0");
+
     const minutes = String(
       Math.floor((seconds % 3600) / 60)
     ).padStart(2, "0");
-    const secs = String(seconds % 60).padStart(2, "0");
+
+    const secs = String(
+      seconds % 60
+    ).padStart(2, "0");
 
     return `${hours}:${minutes}:${secs}`;
   }
 
-  function updateTimer() {
-    let elapsed = state.elapsedBeforePause;
-
-    if (state.recordingStartedAt) {
-      elapsed += performance.now() - state.recordingStartedAt;
+  function getElapsedMs() {
+    if (state.timerStartedAt === null) {
+      return state.accumulatedMs;
     }
 
-    els.timer.textContent = formatTime(elapsed / 1000);
+    return (
+      state.accumulatedMs +
+      (performance.now() -
+        state.timerStartedAt)
+    );
+  }
+
+  function updateTimer() {
+    const elapsedMs =
+      getElapsedMs();
+
+    els.timer.textContent =
+      formatTime(elapsedMs / 1000);
   }
 
   function startTimer() {
-    stopTimer();
-    state.recordingStartedAt = performance.now();
-    state.timerId = window.setInterval(updateTimer, 500);
+    // Start a new running interval from the
+    // currently accumulated time.
+    state.timerStartedAt =
+      performance.now();
+
+    if (state.timerInterval !== null) {
+      window.clearInterval(
+        state.timerInterval
+      );
+    }
+
+    state.timerInterval =
+      window.setInterval(
+        updateTimer,
+        250
+      );
+
+    updateTimer();
   }
 
   function pauseTimer() {
-    if (state.recordingStartedAt) {
-      state.elapsedBeforePause +=
-        performance.now() - state.recordingStartedAt;
-      state.recordingStartedAt = 0;
+    if (state.timerStartedAt !== null) {
+      state.accumulatedMs =
+        getElapsedMs();
+
+      state.timerStartedAt = null;
+    }
+
+    if (state.timerInterval !== null) {
+      window.clearInterval(
+        state.timerInterval
+      );
+
+      state.timerInterval = null;
     }
 
     updateTimer();
   }
 
   function stopTimer() {
-    if (state.timerId !== null) {
-      window.clearInterval(state.timerId);
-      state.timerId = null;
-    }
+    // Preserve the final elapsed time.
+    pauseTimer();
   }
 
   function resetTimer() {
-    stopTimer();
-    state.recordingStartedAt = 0;
-    state.elapsedBeforePause = 0;
-    els.timer.textContent = "00:00:00";
+    if (state.timerInterval !== null) {
+      window.clearInterval(
+        state.timerInterval
+      );
+
+      state.timerInterval = null;
+    }
+
+    state.timerStartedAt = null;
+    state.accumulatedMs = 0;
+
+    els.timer.textContent =
+      "00:00:00";
   }
+
+  /* =========================================================
+     AUDIO
+  ========================================================= */
 
   function chooseMimeType() {
     if (
       !window.MediaRecorder ||
-      typeof MediaRecorder.isTypeSupported !== "function"
+      typeof MediaRecorder.isTypeSupported !==
+        "function"
     ) {
       return "";
     }
@@ -117,7 +197,9 @@
 
     return (
       candidates.find((type) =>
-        MediaRecorder.isTypeSupported(type)
+        MediaRecorder.isTypeSupported(
+          type
+        )
       ) || ""
     );
   }
@@ -127,64 +209,100 @@
       return;
     }
 
-    state.stream.getTracks().forEach((track) => track.stop());
+    state.stream
+      .getTracks()
+      .forEach((track) => {
+        track.stop();
+      });
+
     state.stream = null;
   }
 
   function revokeAudioUrl() {
     if (state.audioUrl) {
-      URL.revokeObjectURL(state.audioUrl);
+      URL.revokeObjectURL(
+        state.audioUrl
+      );
+
       state.audioUrl = null;
     }
   }
 
-  function showRecordingInfo(message) {
-    els.recordingInfo.hidden = false;
-    els.recordingInfo.textContent = message;
-  }
+  /* =========================================================
+     RECORDING
+  ========================================================= */
 
   async function startRecording() {
+    // Every NEW recording starts from zero.
+    resetTimer();
+
     if (
       !navigator.mediaDevices ||
       !navigator.mediaDevices.getUserMedia
     ) {
-      setStatus("Microphone unavailable");
+      setStatus(
+        "Microphone unavailable"
+      );
+
       showRecordingInfo(
         "This browser does not support microphone recording."
       );
+
       return;
     }
 
     if (!window.MediaRecorder) {
-      setStatus("Recorder unavailable");
+      setStatus(
+        "Recorder unavailable"
+      );
+
       showRecordingInfo(
         "MediaRecorder is not available in this browser."
       );
+
       return;
     }
 
     try {
-      state.stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
+      state.stream =
+        await navigator.mediaDevices.getUserMedia(
+          {
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+              channelCount: 1
+            }
+          }
+        );
 
-      const mimeType = chooseMimeType();
+      const mimeType =
+        chooseMimeType();
 
       state.chunks = [];
 
       state.recorder = mimeType
-        ? new MediaRecorder(state.stream, { mimeType })
-        : new MediaRecorder(state.stream);
+        ? new MediaRecorder(
+            state.stream,
+            { mimeType }
+          )
+        : new MediaRecorder(
+            state.stream
+          );
+
+      state.recordingState =
+        "recording";
 
       state.recorder.addEventListener(
         "dataavailable",
         (event) => {
-          if (event.data && event.data.size > 0) {
-            state.chunks.push(event.data);
+          if (
+            event.data &&
+            event.data.size > 0
+          ) {
+            state.chunks.push(
+              event.data
+            );
           }
         }
       );
@@ -194,15 +312,10 @@
         finishRecording
       );
 
-      state.recorder.addEventListener("error", (event) => {
-        console.error("MediaRecorder error:", event.error || event);
-
-        setStatus("Recording error");
-
-        showRecordingInfo(
-          "The browser reported a recording error."
-        );
-      });
+      state.recorder.addEventListener(
+        "error",
+        handleRecorderError
+      );
 
       state.recorder.start(1000);
 
@@ -212,27 +325,51 @@
       els.pauseBtn.disabled = false;
       els.stopBtn.disabled = false;
 
-      setStatus("Recording", "recording");
+      els.pauseBtn.textContent =
+        "Pause";
+
+      setStatus(
+        "Recording",
+        "recording"
+      );
 
       showRecordingInfo(
-        "Recording is active. Keep this page open while recording."
+        "Recording is active."
       );
     } catch (error) {
-      console.error(error);
+      console.error(
+        "Unable to start recording:",
+        error
+      );
 
       stopStream();
+      resetTimer();
+
+      state.recorder = null;
+      state.recordingState =
+        "inactive";
 
       if (
         error &&
-        error.name === "NotAllowedError"
+        error.name ===
+          "NotAllowedError"
       ) {
         showRecordingInfo(
-          "Microphone permission was denied. Allow microphone access for this site and try again."
+          "Microphone permission was denied. Allow microphone access for this website and try again."
+        );
+      } else if (
+        error &&
+        error.name ===
+          "NotFoundError"
+      ) {
+        showRecordingInfo(
+          "No microphone was found on this device."
         );
       } else {
         showRecordingInfo(
           `Unable to start recording: ${
-            error.message || "Unknown error"
+            error?.message ||
+            "Unknown error"
           }`
         );
       }
@@ -242,60 +379,162 @@
   }
 
   function pauseRecording() {
-    if (!state.recorder) {
+    if (
+      !state.recorder ||
+      state.recordingState ===
+        "inactive"
+    ) {
       return;
     }
 
-    if (state.recorder.state === "recording") {
-      state.recorder.pause();
+    if (
+      state.recordingState ===
+      "recording"
+    ) {
+      if (
+        state.recorder.state ===
+        "recording"
+      ) {
+        state.recorder.pause();
+      }
 
       pauseTimer();
 
-      els.pauseBtn.textContent = "Resume";
+      state.recordingState =
+        "paused";
 
-      setStatus("Paused", "paused");
+      els.pauseBtn.textContent =
+        "Resume";
 
-      showRecordingInfo("Recording is paused.");
-    } else if (state.recorder.state === "paused") {
-      state.recorder.resume();
+      setStatus(
+        "Paused",
+        "paused"
+      );
+
+      showRecordingInfo(
+        `Recording paused at ${els.timer.textContent}.`
+      );
+
+      return;
+    }
+
+    if (
+      state.recordingState ===
+      "paused"
+    ) {
+      if (
+        state.recorder.state ===
+        "paused"
+      ) {
+        state.recorder.resume();
+      }
 
       startTimer();
 
-      els.pauseBtn.textContent = "Pause";
+      state.recordingState =
+        "recording";
 
-      setStatus("Recording", "recording");
+      els.pauseBtn.textContent =
+        "Pause";
 
-      showRecordingInfo("Recording resumed.");
+      setStatus(
+        "Recording",
+        "recording"
+      );
+
+      showRecordingInfo(
+        "Recording resumed."
+      );
     }
   }
 
   function stopRecording() {
-    if (!state.recorder) {
+    if (
+      !state.recorder ||
+      state.recordingState ===
+        "inactive"
+    ) {
       return;
     }
 
-    if (state.recorder.state !== "inactive") {
+    // Stop the timer immediately, but DO NOT reset it.
+    stopTimer();
+
+    if (
+      state.recorder.state !==
+      "inactive"
+    ) {
       state.recorder.stop();
     }
+
+    state.recordingState =
+      "inactive";
+
+    els.startBtn.disabled = false;
+    els.pauseBtn.disabled = true;
+    els.stopBtn.disabled = true;
+
+    els.pauseBtn.textContent =
+      "Pause";
+
+    setStatus(
+      "Processing recording"
+    );
+  }
+
+  function handleRecorderError(
+    event
+  ) {
+    console.error(
+      "MediaRecorder error:",
+      event.error || event
+    );
+
+    stopTimer();
+    stopStream();
+
+    state.recordingState =
+      "inactive";
+
+    els.startBtn.disabled = false;
+    els.pauseBtn.disabled = true;
+    els.stopBtn.disabled = true;
+
+    setStatus(
+      "Recording error"
+    );
+
+    showRecordingInfo(
+      "The browser reported an error while recording."
+    );
   }
 
   function finishRecording() {
     stopTimer();
-    pauseTimer();
     stopStream();
 
     const type =
-      state.recorder?.mimeType || "audio/webm";
+      state.recorder?.mimeType ||
+      "audio/webm";
 
-    const blob = new Blob(state.chunks, { type });
+    const blob = new Blob(
+      state.chunks,
+      { type }
+    );
 
     revokeAudioUrl();
 
     if (blob.size > 0) {
-      state.audioUrl = URL.createObjectURL(blob);
+      state.audioUrl =
+        URL.createObjectURL(
+          blob
+        );
 
-      els.audioPreview.src = state.audioUrl;
-      els.audioPreview.hidden = false;
+      els.audioPreview.src =
+        state.audioUrl;
+
+      els.audioPreview.hidden =
+        false;
 
       const sizeMb = (
         blob.size /
@@ -303,31 +542,42 @@
       ).toFixed(2);
 
       showRecordingInfo(
-        `Recording captured: ${sizeMb} MB`
+        `Recording completed • ${els.timer.textContent} • ${sizeMb} MB`
+      );
+
+      setStatus(
+        "Recorded",
+        "saved"
       );
     } else {
       showRecordingInfo(
         "The recording contained no audio data."
       );
+
+      setStatus("Ready");
     }
+
+    state.recorder = null;
+    state.chunks = [];
 
     els.startBtn.disabled = false;
     els.pauseBtn.disabled = true;
     els.stopBtn.disabled = true;
 
-    els.pauseBtn.textContent = "Pause";
-
-    setStatus("Recorded", "saved");
-
-    state.recorder = null;
+    els.pauseBtn.textContent =
+      "Pause";
   }
+
+  /* =========================================================
+     UPLOAD AUDIO
+  ========================================================= */
 
   function handleAudioFile(event) {
     const file =
-      event.target.files &&
-      event.target.files[0];
+      event.target.files?.[0];
 
-    state.selectedAudioFile = file || null;
+    state.selectedAudioFile =
+      file || null;
 
     if (!file) {
       els.fileInfo.hidden = true;
@@ -343,18 +593,34 @@
 
     els.fileInfo.textContent =
       `${file.name} • ${sizeMb} MB • ${
-        file.type || "Audio format"
+        file.type ||
+        "Audio format"
       }`;
 
     revokeAudioUrl();
 
-    state.audioUrl = URL.createObjectURL(file);
+    state.audioUrl =
+      URL.createObjectURL(
+        file
+      );
 
-    els.audioPreview.src = state.audioUrl;
-    els.audioPreview.hidden = false;
+    els.audioPreview.src =
+      state.audioUrl;
 
-    setStatus("Audio selected", "saved");
+    els.audioPreview.hidden =
+      false;
+
+    setStatus(
+      "Audio selected",
+      "saved"
+    );
   }
+
+  /* =========================================================
+     BROWSER SPEECH RECOGNITION
+     NOTE:
+     This remains only as a temporary test feature.
+  ========================================================= */
 
   function getSpeechRecognition() {
     return (
@@ -370,6 +636,7 @@
 
     if (!SpeechRecognitionCtor) {
       els.speechBtn.disabled = true;
+
       els.speechStatus.textContent =
         "Not supported";
 
@@ -384,7 +651,8 @@
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
-      state.recognitionRunning = true;
+      state.recognitionRunning =
+        true;
 
       els.speechBtn.textContent =
         "Stop Browser Transcription";
@@ -394,7 +662,8 @@
     };
 
     recognition.onend = () => {
-      state.recognitionRunning = false;
+      state.recognitionRunning =
+        false;
 
       els.speechBtn.textContent =
         "Start Browser Transcription";
@@ -403,34 +672,46 @@
         "Stopped";
     };
 
-    recognition.onerror = (event) => {
+    recognition.onerror = (
+      event
+    ) => {
       console.warn(
         "Speech recognition error:",
         event.error
       );
 
-      state.recognitionRunning = false;
+      state.recognitionRunning =
+        false;
 
       els.speechBtn.textContent =
         "Start Browser Transcription";
 
       els.speechStatus.textContent =
-        `Error: ${event.error || "unknown"}`;
+        `Error: ${
+          event.error ||
+          "unknown"
+        }`;
     };
 
-    recognition.onresult = (event) => {
+    recognition.onresult = (
+      event
+    ) => {
       let finalText = "";
       let interimText = "";
 
       for (
-        let i = event.resultIndex;
-        i < event.results.length;
+        let i =
+          event.resultIndex;
+        i <
+        event.results.length;
         i += 1
       ) {
-        const result = event.results[i];
+        const result =
+          event.results[i];
 
         const text =
-          result[0]?.transcript || "";
+          result[0]?.transcript ||
+          "";
 
         if (result.isFinal) {
           finalText += text;
@@ -442,14 +723,13 @@
       const existing =
         state.transcriptBeforeSpeech.trim();
 
-      const addition =
-        finalText.trim();
-
-      if (addition) {
+      if (finalText.trim()) {
         state.transcriptBeforeSpeech =
           `${existing}${
-            existing ? "\n" : ""
-          }${addition}`.trim();
+            existing
+              ? "\n"
+              : ""
+          }${finalText.trim()}`.trim();
       }
 
       els.transcript.value =
@@ -476,7 +756,9 @@
     state.recognition.lang =
       els.languageSelect.value;
 
-    if (state.recognitionRunning) {
+    if (
+      state.recognitionRunning
+    ) {
       state.recognition.stop();
       return;
     }
@@ -494,11 +776,19 @@
     }
   }
 
+  /* =========================================================
+     SUMMARY
+  ========================================================= */
+
   function cleanSentences(text) {
     return text
       .replace(/\s+/g, " ")
-      .split(/(?<=[.!?。！？])\s+/)
-      .map((item) => item.trim())
+      .split(
+        /(?<=[.!?。！？])\s+/
+      )
+      .map(
+        (item) => item.trim()
+      )
       .filter(Boolean);
   }
 
@@ -506,24 +796,33 @@
     sentences,
     patterns
   ) {
-    return sentences.filter((sentence) =>
-      patterns.some((pattern) =>
-        pattern.test(sentence)
-      )
+    return sentences.filter(
+      (sentence) =>
+        patterns.some(
+          (pattern) =>
+            pattern.test(
+              sentence
+            )
+        )
     );
   }
 
   function unique(items) {
-    return [...new Set(items)];
+    return [
+      ...new Set(items)
+    ];
   }
 
-  function generateLocalSummary(text) {
+  function generateLocalSummary(
+    text
+  ) {
     const sentences =
       cleanSentences(text);
 
     if (!sentences.length) {
       return {
-        overview: "No transcript available.",
+        overview:
+          "No transcript available.",
         decisions: [],
         actions: []
       };
@@ -561,26 +860,27 @@
       /必须/
     ];
 
-    const decisions = unique(
-      extractByKeywords(
-        sentences,
-        decisionPatterns
-      )
-    ).slice(0, 8);
-
-    const actions = unique(
-      extractByKeywords(
-        sentences,
-        actionPatterns
-      )
-    ).slice(0, 8);
-
     return {
-      overview: sentences
-        .slice(0, 4)
-        .join(" "),
-      decisions,
-      actions
+      overview:
+        sentences
+          .slice(0, 4)
+          .join(" "),
+
+      decisions:
+        unique(
+          extractByKeywords(
+            sentences,
+            decisionPatterns
+          )
+        ).slice(0, 8),
+
+      actions:
+        unique(
+          extractByKeywords(
+            sentences,
+            actionPatterns
+          )
+        ).slice(0, 8)
     };
   }
 
@@ -593,9 +893,12 @@
 
     if (!items.length) {
       const li =
-        document.createElement("li");
+        document.createElement(
+          "li"
+        );
 
-      li.textContent = emptyText;
+      li.textContent =
+        emptyText;
 
       element.appendChild(li);
 
@@ -604,7 +907,9 @@
 
     items.forEach((item) => {
       const li =
-        document.createElement("li");
+        document.createElement(
+          "li"
+        );
 
       li.textContent = item;
 
@@ -636,7 +941,9 @@
     }
 
     const result =
-      generateLocalSummary(text);
+      generateLocalSummary(
+        text
+      );
 
     els.summaryOverview.textContent =
       result.overview;
@@ -659,24 +966,51 @@
     );
   }
 
+  /* =========================================================
+     LOCAL STORAGE
+  ========================================================= */
+
   function buildDraft() {
     return {
-      version: 1,
-      savedAt: new Date().toISOString(),
+      version: 2,
+      savedAt:
+        new Date().toISOString(),
+
       language:
         els.languageSelect.value,
+
       summaryLanguage:
-        els.summaryLanguageSelect.value,
+        els.summaryLanguageSelect
+          .value,
+
       transcript:
         els.transcript.value,
+
       overview:
-        els.summaryOverview.textContent,
+        els.summaryOverview
+          .textContent,
+
       decisions:
-        [...els.decisionsList.querySelectorAll("li")]
-          .map((li) => li.textContent),
+        [
+          ...els.decisionsList
+            .querySelectorAll(
+              "li"
+            )
+        ].map(
+          (li) =>
+            li.textContent
+        ),
+
       actions:
-        [...els.actionsList.querySelectorAll("li")]
-          .map((li) => li.textContent)
+        [
+          ...els.actionsList
+            .querySelectorAll(
+              "li"
+            )
+        ].map(
+          (li) =>
+            li.textContent
+        )
     };
   }
 
@@ -684,7 +1018,9 @@
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify(buildDraft())
+        JSON.stringify(
+          buildDraft()
+        )
       );
 
       setStatus(
@@ -694,7 +1030,9 @@
     } catch (error) {
       console.error(error);
 
-      setStatus("Save failed");
+      setStatus(
+        "Save failed"
+      );
 
       alert(
         "Unable to save the draft in this browser."
@@ -716,7 +1054,11 @@
       const draft =
         JSON.parse(raw);
 
-      if (!draft || typeof draft !== "object") {
+      if (
+        !draft ||
+        typeof draft !==
+          "object"
+      ) {
         return;
       }
 
@@ -746,7 +1088,11 @@
           draft.overview;
       }
 
-      if (Array.isArray(draft.decisions)) {
+      if (
+        Array.isArray(
+          draft.decisions
+        )
+      ) {
         renderList(
           els.decisionsList,
           draft.decisions,
@@ -754,7 +1100,11 @@
         );
       }
 
-      if (Array.isArray(draft.actions)) {
+      if (
+        Array.isArray(
+          draft.actions
+        )
+      ) {
         renderList(
           els.actionsList,
           draft.actions,
@@ -774,28 +1124,37 @@
     }
   }
 
+  /* =========================================================
+     EXPORT
+  ========================================================= */
+
   function exportMeeting() {
-    const now = new Date();
+    const now =
+      new Date();
 
     const decisions =
       [
-        ...els.decisionsList.querySelectorAll(
-          "li"
-        )
+        ...els.decisionsList
+          .querySelectorAll(
+            "li"
+          )
       ]
         .map(
-          (li) => `- ${li.textContent}`
+          (li) =>
+            `- ${li.textContent}`
         )
         .join("\n");
 
     const actions =
       [
-        ...els.actionsList.querySelectorAll(
-          "li"
-        )
+        ...els.actionsList
+          .querySelectorAll(
+            "li"
+          )
       ]
         .map(
-          (li) => `- ${li.textContent}`
+          (li) =>
+            `- ${li.textContent}`
         )
         .join("\n");
 
@@ -806,16 +1165,19 @@
       "",
       "OVERVIEW",
       "--------",
-      els.summaryOverview.textContent ||
+      els.summaryOverview
+        .textContent ||
         "No summary.",
       "",
       "KEY DECISIONS",
       "-------------",
-      decisions || "- None",
+      decisions ||
+        "- None",
       "",
       "ACTION ITEMS",
       "------------",
-      actions || "- None",
+      actions ||
+        "- None",
       "",
       "TRANSCRIPT",
       "----------",
@@ -823,35 +1185,47 @@
         "No transcript."
     ].join("\n");
 
-    const blob = new Blob(
-      [content],
-      {
-        type:
-          "text/plain;charset=utf-8"
-      }
-    );
+    const blob =
+      new Blob(
+        [content],
+        {
+          type:
+            "text/plain;charset=utf-8"
+        }
+      );
 
     const url =
-      URL.createObjectURL(blob);
+      URL.createObjectURL(
+        blob
+      );
 
     const anchor =
-      document.createElement("a");
+      document.createElement(
+        "a"
+      );
 
     anchor.href = url;
 
     anchor.download =
       `MeetingSummary-${
-        now.toISOString().slice(0, 10)
+        now
+          .toISOString()
+          .slice(0, 10)
       }.txt`;
 
-    document.body.appendChild(anchor);
+    document.body.appendChild(
+      anchor
+    );
 
     anchor.click();
 
     anchor.remove();
 
     window.setTimeout(
-      () => URL.revokeObjectURL(url),
+      () =>
+        URL.revokeObjectURL(
+          url
+        ),
       1000
     );
 
@@ -861,12 +1235,19 @@
     );
   }
 
+  /* =========================================================
+     CLEAR
+  ========================================================= */
+
   function clearTranscript() {
     els.transcript.value = "";
 
-    state.transcriptBeforeSpeech = "";
+    state.transcriptBeforeSpeech =
+      "";
 
-    setStatus("Transcript cleared");
+    setStatus(
+      "Transcript cleared"
+    );
   }
 
   function clearMeeting() {
@@ -878,6 +1259,23 @@
     if (!confirmed) {
       return;
     }
+
+    if (
+      state.recordingState !==
+      "inactive"
+    ) {
+      if (
+        state.recorder &&
+        state.recorder.state !==
+          "inactive"
+      ) {
+        state.recorder.stop();
+      }
+
+      stopStream();
+    }
+
+    resetTimer();
 
     localStorage.removeItem(
       STORAGE_KEY
@@ -902,7 +1300,8 @@
 
     els.audioFile.value = "";
 
-    state.selectedAudioFile = null;
+    state.selectedAudioFile =
+      null;
 
     revokeAudioUrl();
 
@@ -910,16 +1309,37 @@
       "src"
     );
 
-    els.audioPreview.hidden = true;
+    els.audioPreview.hidden =
+      true;
 
     els.fileInfo.hidden = true;
 
-    els.recordingInfo.hidden = true;
+    els.recordingInfo.hidden =
+      true;
 
-    resetTimer();
+    state.recorder = null;
+    state.chunks = [];
+    state.recordingState =
+      "inactive";
+
+    els.startBtn.disabled =
+      false;
+
+    els.pauseBtn.disabled =
+      true;
+
+    els.stopBtn.disabled =
+      true;
+
+    els.pauseBtn.textContent =
+      "Pause";
 
     setStatus("Ready");
   }
+
+  /* =========================================================
+     EVENTS
+  ========================================================= */
 
   els.startBtn.addEventListener(
     "click",
@@ -971,6 +1391,10 @@
     clearMeeting
   );
 
+  /* =========================================================
+     LANGUAGE
+  ========================================================= */
+
   els.languageSelect.addEventListener(
     "change",
     () => {
@@ -980,19 +1404,34 @@
       ) {
         state.recognition.stop();
 
-        window.setTimeout(() => {
-          state.recognition.lang =
-            els.languageSelect.value;
+        window.setTimeout(
+          () => {
+            if (
+              !state.recognition
+            ) {
+              return;
+            }
 
-          try {
-            state.recognition.start();
-          } catch (error) {
-            console.warn(error);
-          }
-        }, 150);
+            state.recognition.lang =
+              els.languageSelect.value;
+
+            try {
+              state.recognition.start();
+            } catch (error) {
+              console.warn(
+                error
+              );
+            }
+          },
+          150
+        );
       }
     }
   );
+
+  /* =========================================================
+     CLEANUP
+  ========================================================= */
 
   window.addEventListener(
     "beforeunload",
@@ -1003,8 +1442,20 @@
     }
   );
 
+  /* =========================================================
+     INIT
+  ========================================================= */
+
   state.recognition =
     setupSpeechRecognition();
 
   loadDraft();
+
+  // Ensure the initial UI is consistent.
+  els.startBtn.disabled = false;
+  els.pauseBtn.disabled = true;
+  els.stopBtn.disabled = true;
+
+  els.timer.textContent =
+    "00:00:00";
 })();
