@@ -1,608 +1,807 @@
-(() => {
-  "use strict";
+import {
+  pipeline,
+  env
+} from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.1";
 
-  const $ = (id) => document.getElementById(id);
+"use strict";
 
-  const els = {
-    startBtn: $("startBtn"),
-    pauseBtn: $("pauseBtn"),
-    stopBtn: $("stopBtn"),
-    timer: $("timer"),
-    statusBadge: $("statusBadge"),
-    languageSelect: $("languageSelect"),
-    summaryLanguageSelect: $("summaryLanguageSelect"),
-    recordingInfo: $("recordingInfo"),
-    audioPreview: $("audioPreview"),
-    audioFile: $("audioFile"),
-    fileInfo: $("fileInfo"),
-    transcript: $("transcript"),
-    speechBtn: $("speechBtn"),
-    speechStatus: $("speechStatus"),
-    clearTranscriptBtn: $("clearTranscriptBtn"),
-    generateBtn: $("generateBtn"),
-    summaryOverview: $("summaryOverview"),
-    decisionsList: $("decisionsList"),
-    actionsList: $("actionsList"),
-    exportBtn: $("exportBtn"),
-    saveBtn: $("saveBtn"),
-    clearAllBtn: $("clearAllBtn")
-  };
 
-  const state = {
-    stream: null,
-    recorder: null,
-    chunks: [],
+/* =========================================================
+   CONFIGURATION
+========================================================= */
 
-    // Timer state
-    timerStartedAt: null,
-    accumulatedMs: 0,
-    timerInterval: null,
+const MODEL_ID = "Xenova/whisper-tiny";
 
-    // Audio
-    audioUrl: null,
-    selectedAudioFile: null,
 
-    // Speech recognition
-    recognition: null,
-    recognitionRunning: false,
-    transcriptBeforeSpeech: "",
+// We want remote models from Hugging Face.
+// No local model files are required in the repository.
+env.allowLocalModels = false;
+env.allowRemoteModels = true;
 
-    // Recording state
-    recordingState: "inactive"
-  };
 
-  const STORAGE_KEY =
-    "meetingSummaryDraftV02";
+/* =========================================================
+   DOM
+========================================================= */
 
-  /* =========================================================
-     STATUS
-  ========================================================= */
+const $ = (id) =>
+  document.getElementById(id);
 
-  function setStatus(text, type = "") {
-    els.statusBadge.textContent = text;
-    els.statusBadge.className =
-      `status-badge ${type}`.trim();
-  }
 
-  function showRecordingInfo(message) {
-    els.recordingInfo.hidden = false;
-    els.recordingInfo.textContent = message;
-  }
+const els = {
 
-  /* =========================================================
-     TIMER
-  ========================================================= */
+  startBtn:
+    $("startBtn"),
 
-  function formatTime(totalSeconds) {
-    const seconds = Math.max(
+  pauseBtn:
+    $("pauseBtn"),
+
+  stopBtn:
+    $("stopBtn"),
+
+  timer:
+    $("timer"),
+
+  statusBadge:
+    $("statusBadge"),
+
+  recordingInfo:
+    $("recordingInfo"),
+
+  audioPreview:
+    $("audioPreview"),
+
+  audioFile:
+    $("audioFile"),
+
+  fileInfo:
+    $("fileInfo"),
+
+  languageSelect:
+    $("languageSelect"),
+
+  outputLanguage:
+    $("outputLanguage"),
+
+  loadModelBtn:
+    $("loadModelBtn"),
+
+  modelStatus:
+    $("modelStatus"),
+
+  transcribeBtn:
+    $("transcribeBtn"),
+
+  progressBox:
+    $("progressBox"),
+
+  progressText:
+    $("progressText"),
+
+  progressBar:
+    $("progressBar"),
+
+  transcript:
+    $("transcript"),
+
+  detectedLanguage:
+    $("detectedLanguage"),
+
+  clearTranscriptBtn:
+    $("clearTranscriptBtn"),
+
+  summaryLanguageSelect:
+    $("summaryLanguageSelect"),
+
+  generateBtn:
+    $("generateBtn"),
+
+  summaryOverview:
+    $("summaryOverview"),
+
+  decisionsList:
+    $("decisionsList"),
+
+  actionsList:
+    $("actionsList"),
+
+  saveBtn:
+    $("saveBtn"),
+
+  exportBtn:
+    $("exportBtn"),
+
+  clearAllBtn:
+    $("clearAllBtn")
+
+};
+
+
+/* =========================================================
+   STATE
+========================================================= */
+
+const state = {
+
+  stream: null,
+
+  recorder: null,
+
+  chunks: [],
+
+  audioBlob: null,
+
+  audioUrl: null,
+
+  recorderState:
+    "inactive",
+
+  timerStartedAt:
+    null,
+
+  accumulatedMs:
+    0,
+
+  timerInterval:
+    null,
+
+  transcriber:
+    null,
+
+  modelLoading:
+    false,
+
+  modelReady:
+    false
+
+};
+
+
+/* =========================================================
+   STATUS
+========================================================= */
+
+function setStatus(
+  text,
+  type = ""
+) {
+
+  els.statusBadge.textContent =
+    text;
+
+  els.statusBadge.className =
+    `status-badge ${type}`.trim();
+
+}
+
+
+function info(
+  message
+) {
+
+  els.recordingInfo.hidden =
+    false;
+
+  els.recordingInfo.textContent =
+    message;
+
+}
+
+
+/* =========================================================
+   TIMER
+========================================================= */
+
+function formatTime(
+  seconds
+) {
+
+  seconds =
+    Math.max(
       0,
-      Math.floor(totalSeconds)
+      Math.floor(seconds)
     );
 
-    const hours = String(
-      Math.floor(seconds / 3600)
-    ).padStart(2, "0");
+  const h =
+    String(
+      Math.floor(
+        seconds / 3600
+      )
+    ).padStart(
+      2,
+      "0"
+    );
 
-    const minutes = String(
-      Math.floor((seconds % 3600) / 60)
-    ).padStart(2, "0");
+  const m =
+    String(
+      Math.floor(
+        (seconds % 3600) / 60
+      )
+    ).padStart(
+      2,
+      "0"
+    );
 
-    const secs = String(
+  const s =
+    String(
       seconds % 60
-    ).padStart(2, "0");
-
-    return `${hours}:${minutes}:${secs}`;
-  }
-
-  function getElapsedMs() {
-    if (state.timerStartedAt === null) {
-      return state.accumulatedMs;
-    }
-
-    return (
-      state.accumulatedMs +
-      (performance.now() -
-        state.timerStartedAt)
+    ).padStart(
+      2,
+      "0"
     );
+
+  return `${h}:${m}:${s}`;
+
+}
+
+
+function getElapsedMs() {
+
+  if (
+    state.timerStartedAt ===
+    null
+  ) {
+
+    return state.accumulatedMs;
+
   }
 
-  function updateTimer() {
-    const elapsedMs =
+  return (
+    state.accumulatedMs +
+    (
+      performance.now() -
+      state.timerStartedAt
+    )
+  );
+
+}
+
+
+function updateTimer() {
+
+  els.timer.textContent =
+    formatTime(
+      getElapsedMs() /
+      1000
+    );
+
+}
+
+
+function startTimer() {
+
+  state.timerStartedAt =
+    performance.now();
+
+  if (
+    state.timerInterval !==
+    null
+  ) {
+
+    clearInterval(
+      state.timerInterval
+    );
+
+  }
+
+  state.timerInterval =
+    setInterval(
+      updateTimer,
+      250
+    );
+
+  updateTimer();
+
+}
+
+
+function pauseTimer() {
+
+  if (
+    state.timerStartedAt !==
+    null
+  ) {
+
+    state.accumulatedMs =
       getElapsedMs();
 
-    els.timer.textContent =
-      formatTime(elapsedMs / 1000);
+    state.timerStartedAt =
+      null;
+
   }
 
-  function startTimer() {
-    // Start a new running interval from the
-    // currently accumulated time.
-    state.timerStartedAt =
-      performance.now();
+  if (
+    state.timerInterval !==
+    null
+  ) {
 
-    if (state.timerInterval !== null) {
-      window.clearInterval(
-        state.timerInterval
-      );
-    }
+    clearInterval(
+      state.timerInterval
+    );
 
     state.timerInterval =
-      window.setInterval(
-        updateTimer,
-        250
-      );
+      null;
 
-    updateTimer();
   }
 
-  function pauseTimer() {
-    if (state.timerStartedAt !== null) {
-      state.accumulatedMs =
-        getElapsedMs();
+  updateTimer();
 
-      state.timerStartedAt = null;
-    }
+}
 
-    if (state.timerInterval !== null) {
-      window.clearInterval(
-        state.timerInterval
-      );
 
-      state.timerInterval = null;
-    }
+function resetTimer() {
 
-    updateTimer();
+  if (
+    state.timerInterval !==
+    null
+  ) {
+
+    clearInterval(
+      state.timerInterval
+    );
+
   }
 
-  function stopTimer() {
-    // Preserve the final elapsed time.
-    pauseTimer();
+  state.timerInterval =
+    null;
+
+  state.timerStartedAt =
+    null;
+
+  state.accumulatedMs =
+    0;
+
+  els.timer.textContent =
+    "00:00:00";
+
+}
+
+
+/* =========================================================
+   AUDIO
+========================================================= */
+
+function revokeAudioUrl() {
+
+  if (
+    state.audioUrl
+  ) {
+
+    URL.revokeObjectURL(
+      state.audioUrl
+    );
+
+    state.audioUrl =
+      null;
+
   }
 
-  function resetTimer() {
-    if (state.timerInterval !== null) {
-      window.clearInterval(
-        state.timerInterval
-      );
+}
 
-      state.timerInterval = null;
-    }
 
-    state.timerStartedAt = null;
-    state.accumulatedMs = 0;
+function stopStream() {
 
-    els.timer.textContent =
-      "00:00:00";
+  if (
+    !state.stream
+  ) {
+
+    return;
+
   }
 
-  /* =========================================================
-     AUDIO
-  ========================================================= */
+  state.stream
+    .getTracks()
+    .forEach(
+      (track) =>
+        track.stop()
+    );
 
-  function chooseMimeType() {
-    if (
-      !window.MediaRecorder ||
-      typeof MediaRecorder.isTypeSupported !==
-        "function"
-    ) {
-      return "";
-    }
+  state.stream =
+    null;
 
-    const candidates = [
-      "audio/mp4",
-      "audio/mp4;codecs=mp4a.40.2",
-      "audio/webm;codecs=opus",
-      "audio/webm"
-    ];
+}
 
-    return (
-      candidates.find((type) =>
+
+function chooseMimeType() {
+
+  if (
+    !window.MediaRecorder ||
+    typeof MediaRecorder.isTypeSupported !==
+      "function"
+  ) {
+
+    return "";
+
+  }
+
+  const types = [
+
+    "audio/mp4",
+
+    "audio/mp4;codecs=mp4a.40.2",
+
+    "audio/webm;codecs=opus",
+
+    "audio/webm"
+
+  ];
+
+  return (
+    types.find(
+      (type) =>
         MediaRecorder.isTypeSupported(
           type
         )
-      ) || ""
+    ) || ""
+  );
+
+}
+
+
+/* =========================================================
+   RECORDING
+========================================================= */
+
+async function startRecording() {
+
+  resetTimer();
+
+  if (
+    !navigator.mediaDevices ||
+    !navigator.mediaDevices.getUserMedia
+  ) {
+
+    setStatus(
+      "Microphone unavailable"
     );
+
+    info(
+      "This browser does not support microphone recording."
+    );
+
+    return;
+
   }
 
-  function stopStream() {
-    if (!state.stream) {
-      return;
-    }
 
-    state.stream
-      .getTracks()
-      .forEach((track) => {
-        track.stop();
-      });
+  try {
 
-    state.stream = null;
-  }
+    state.stream =
+      await navigator.mediaDevices.getUserMedia(
+        {
+          audio: {
+            echoCancellation:
+              true,
 
-  function revokeAudioUrl() {
-    if (state.audioUrl) {
-      URL.revokeObjectURL(
-        state.audioUrl
-      );
+            noiseSuppression:
+              true,
 
-      state.audioUrl = null;
-    }
-  }
+            autoGainControl:
+              true,
 
-  /* =========================================================
-     RECORDING
-  ========================================================= */
+            channelCount:
+              1,
 
-  async function startRecording() {
-    // Every NEW recording starts from zero.
-    resetTimer();
-
-    if (
-      !navigator.mediaDevices ||
-      !navigator.mediaDevices.getUserMedia
-    ) {
-      setStatus(
-        "Microphone unavailable"
-      );
-
-      showRecordingInfo(
-        "This browser does not support microphone recording."
-      );
-
-      return;
-    }
-
-    if (!window.MediaRecorder) {
-      setStatus(
-        "Recorder unavailable"
-      );
-
-      showRecordingInfo(
-        "MediaRecorder is not available in this browser."
-      );
-
-      return;
-    }
-
-    try {
-      state.stream =
-        await navigator.mediaDevices.getUserMedia(
-          {
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-              channelCount: 1
-            }
-          }
-        );
-
-      const mimeType =
-        chooseMimeType();
-
-      state.chunks = [];
-
-      state.recorder = mimeType
-        ? new MediaRecorder(
-            state.stream,
-            { mimeType }
-          )
-        : new MediaRecorder(
-            state.stream
-          );
-
-      state.recordingState =
-        "recording";
-
-      state.recorder.addEventListener(
-        "dataavailable",
-        (event) => {
-          if (
-            event.data &&
-            event.data.size > 0
-          ) {
-            state.chunks.push(
-              event.data
-            );
+            sampleRate:
+              48000
           }
         }
       );
 
-      state.recorder.addEventListener(
-        "stop",
-        finishRecording
-      );
 
-      state.recorder.addEventListener(
-        "error",
-        handleRecorderError
-      );
+    const mimeType =
+      chooseMimeType();
 
-      state.recorder.start(1000);
 
-      startTimer();
+    state.chunks =
+      [];
 
-      els.startBtn.disabled = true;
-      els.pauseBtn.disabled = false;
-      els.stopBtn.disabled = false;
+    state.audioBlob =
+      null;
 
-      els.pauseBtn.textContent =
-        "Pause";
 
-      setStatus(
-        "Recording",
-        "recording"
-      );
+    state.recorder =
+      mimeType
 
-      showRecordingInfo(
-        "Recording is active."
-      );
-    } catch (error) {
-      console.error(
-        "Unable to start recording:",
-        error
-      );
+        ? new MediaRecorder(
+            state.stream,
+            {
+              mimeType
+            }
+          )
 
-      stopStream();
-      resetTimer();
+        : new MediaRecorder(
+            state.stream
+          );
 
-      state.recorder = null;
-      state.recordingState =
-        "inactive";
 
-      if (
-        error &&
-        error.name ===
-          "NotAllowedError"
-      ) {
-        showRecordingInfo(
-          "Microphone permission was denied. Allow microphone access for this website and try again."
+    state.recorder.ondataavailable =
+      (event) => {
+
+        if (
+          event.data &&
+          event.data.size > 0
+        ) {
+
+          state.chunks.push(
+            event.data
+          );
+
+        }
+
+      };
+
+
+    state.recorder.onerror =
+      (event) => {
+
+        console.error(
+          "MediaRecorder error:",
+          event
         );
-      } else if (
-        error &&
-        error.name ===
-          "NotFoundError"
-      ) {
-        showRecordingInfo(
-          "No microphone was found on this device."
-        );
-      } else {
-        showRecordingInfo(
-          `Unable to start recording: ${
-            error?.message ||
-            "Unknown error"
-          }`
-        );
-      }
 
-      setStatus("Ready");
-    }
+        setStatus(
+          "Recording error"
+        );
+
+      };
+
+
+    state.recorder.onstop =
+      finishRecording;
+
+
+    state.recorder.start(
+      1000
+    );
+
+
+    state.recorderState =
+      "recording";
+
+
+    startTimer();
+
+
+    els.startBtn.disabled =
+      true;
+
+    els.pauseBtn.disabled =
+      false;
+
+    els.stopBtn.disabled =
+      false;
+
+
+    setStatus(
+      "Recording",
+      "recording"
+    );
+
+
+    info(
+      "Recording is active."
+    );
+
   }
 
-  function pauseRecording() {
-    if (
-      !state.recorder ||
-      state.recordingState ===
-        "inactive"
-    ) {
-      return;
-    }
+  catch (error) {
+
+    console.error(
+      error
+    );
+
+    stopStream();
+
+    resetTimer();
+
+    setStatus(
+      "Microphone error"
+    );
 
     if (
-      state.recordingState ===
+      error?.name ===
+      "NotAllowedError"
+    ) {
+
+      info(
+        "Microphone permission was denied. Allow microphone access and try again."
+      );
+
+    }
+
+    else {
+
+      info(
+        error?.message ||
+        "Unable to start recording."
+      );
+
+    }
+
+  }
+
+}
+
+
+function pauseRecording() {
+
+  if (
+    !state.recorder
+  ) {
+
+    return;
+
+  }
+
+
+  if (
+    state.recorderState ===
+    "recording"
+  ) {
+
+    if (
+      state.recorder.state ===
       "recording"
     ) {
-      if (
-        state.recorder.state ===
-        "recording"
-      ) {
-        state.recorder.pause();
-      }
 
-      pauseTimer();
+      state.recorder.pause();
 
-      state.recordingState =
-        "paused";
-
-      els.pauseBtn.textContent =
-        "Resume";
-
-      setStatus(
-        "Paused",
-        "paused"
-      );
-
-      showRecordingInfo(
-        `Recording paused at ${els.timer.textContent}.`
-      );
-
-      return;
     }
 
+
+    pauseTimer();
+
+
+    state.recorderState =
+      "paused";
+
+
+    els.pauseBtn.textContent =
+      "Resume";
+
+
+    setStatus(
+      "Paused",
+      "paused"
+    );
+
+
+    info(
+      `Recording paused at ${els.timer.textContent}.`
+    );
+
+    return;
+
+  }
+
+
+  if (
+    state.recorderState ===
+    "paused"
+  ) {
+
     if (
-      state.recordingState ===
+      state.recorder.state ===
       "paused"
     ) {
-      if (
-        state.recorder.state ===
-        "paused"
-      ) {
-        state.recorder.resume();
-      }
 
-      startTimer();
+      state.recorder.resume();
 
-      state.recordingState =
-        "recording";
-
-      els.pauseBtn.textContent =
-        "Pause";
-
-      setStatus(
-        "Recording",
-        "recording"
-      );
-
-      showRecordingInfo(
-        "Recording resumed."
-      );
-    }
-  }
-
-  function stopRecording() {
-    if (
-      !state.recorder ||
-      state.recordingState ===
-        "inactive"
-    ) {
-      return;
     }
 
-    // Stop the timer immediately, but DO NOT reset it.
-    stopTimer();
 
-    if (
-      state.recorder.state !==
-      "inactive"
-    ) {
-      state.recorder.stop();
-    }
+    startTimer();
 
-    state.recordingState =
-      "inactive";
 
-    els.startBtn.disabled = false;
-    els.pauseBtn.disabled = true;
-    els.stopBtn.disabled = true;
+    state.recorderState =
+      "recording";
+
 
     els.pauseBtn.textContent =
       "Pause";
 
+
     setStatus(
-      "Processing recording"
+      "Recording",
+      "recording"
     );
+
+
+    info(
+      "Recording resumed."
+    );
+
   }
 
-  function handleRecorderError(
-    event
+}
+
+
+function stopRecording() {
+
+  if (
+    !state.recorder
   ) {
-    console.error(
-      "MediaRecorder error:",
-      event.error || event
-    );
 
-    stopTimer();
-    stopStream();
+    return;
 
-    state.recordingState =
-      "inactive";
-
-    els.startBtn.disabled = false;
-    els.pauseBtn.disabled = true;
-    els.stopBtn.disabled = true;
-
-    setStatus(
-      "Recording error"
-    );
-
-    showRecordingInfo(
-      "The browser reported an error while recording."
-    );
   }
 
-  function finishRecording() {
-    stopTimer();
-    stopStream();
 
-    const type =
-      state.recorder?.mimeType ||
-      "audio/webm";
+  pauseTimer();
 
-    const blob = new Blob(
+
+  if (
+    state.recorder.state !==
+    "inactive"
+  ) {
+
+    state.recorder.stop();
+
+  }
+
+
+  state.recorderState =
+    "inactive";
+
+
+  els.startBtn.disabled =
+    false;
+
+  els.pauseBtn.disabled =
+    true;
+
+  els.stopBtn.disabled =
+    true;
+
+  els.pauseBtn.textContent =
+    "Pause";
+
+
+  setStatus(
+    "Processing recording"
+  );
+
+}
+
+
+function finishRecording() {
+
+  pauseTimer();
+
+  stopStream();
+
+
+  const type =
+    state.recorder?.mimeType ||
+    "audio/webm";
+
+
+  state.audioBlob =
+    new Blob(
       state.chunks,
-      { type }
+      {
+        type
+      }
     );
 
-    revokeAudioUrl();
 
-    if (blob.size > 0) {
-      state.audioUrl =
-        URL.createObjectURL(
-          blob
-        );
+  state.chunks =
+    [];
 
-      els.audioPreview.src =
-        state.audioUrl;
 
-      els.audioPreview.hidden =
-        false;
+  revokeAudioUrl();
 
-      const sizeMb = (
-        blob.size /
-        (1024 * 1024)
-      ).toFixed(2);
 
-      showRecordingInfo(
-        `Recording completed • ${els.timer.textContent} • ${sizeMb} MB`
-      );
-
-      setStatus(
-        "Recorded",
-        "saved"
-      );
-    } else {
-      showRecordingInfo(
-        "The recording contained no audio data."
-      );
-
-      setStatus("Ready");
-    }
-
-    state.recorder = null;
-    state.chunks = [];
-
-    els.startBtn.disabled = false;
-    els.pauseBtn.disabled = true;
-    els.stopBtn.disabled = true;
-
-    els.pauseBtn.textContent =
-      "Pause";
-  }
-
-  /* =========================================================
-     UPLOAD AUDIO
-  ========================================================= */
-
-  function handleAudioFile(event) {
-    const file =
-      event.target.files?.[0];
-
-    state.selectedAudioFile =
-      file || null;
-
-    if (!file) {
-      els.fileInfo.hidden = true;
-      return;
-    }
-
-    const sizeMb = (
-      file.size /
-      (1024 * 1024)
-    ).toFixed(2);
-
-    els.fileInfo.hidden = false;
-
-    els.fileInfo.textContent =
-      `${file.name} • ${sizeMb} MB • ${
-        file.type ||
-        "Audio format"
-      }`;
-
-    revokeAudioUrl();
+  if (
+    state.audioBlob.size >
+    0
+  ) {
 
     state.audioUrl =
       URL.createObjectURL(
-        file
+        state.audioBlob
       );
+
 
     els.audioPreview.src =
       state.audioUrl;
@@ -610,852 +809,1383 @@
     els.audioPreview.hidden =
       false;
 
+
+    const size =
+      (
+        state.audioBlob.size /
+        1024 /
+        1024
+      ).toFixed(
+        2
+      );
+
+
+    info(
+      `Recording completed • ${els.timer.textContent} • ${size} MB`
+    );
+
+
+    setStatus(
+      "Recorded",
+      "saved"
+    );
+
+
+    els.transcribeBtn.disabled =
+      !state.modelReady;
+
+  }
+
+  else {
+
+    info(
+      "No audio data was recorded."
+    );
+
+    setStatus(
+      "Ready"
+    );
+
+  }
+
+
+  state.recorder =
+    null;
+
+}
+
+
+/* =========================================================
+   UPLOAD
+========================================================= */
+
+els.audioFile.addEventListener(
+  "change",
+  () => {
+
+    const file =
+      els.audioFile.files?.[0];
+
+
+    if (
+      !file
+    ) {
+
+      return;
+
+    }
+
+
+    state.audioBlob =
+      file;
+
+
+    revokeAudioUrl();
+
+
+    state.audioUrl =
+      URL.createObjectURL(
+        file
+      );
+
+
+    els.audioPreview.src =
+      state.audioUrl;
+
+    els.audioPreview.hidden =
+      false;
+
+
+    const size =
+      (
+        file.size /
+        1024 /
+        1024
+      ).toFixed(
+        2
+      );
+
+
+    els.fileInfo.hidden =
+      false;
+
+    els.fileInfo.textContent =
+      `${file.name} • ${size} MB`;
+
+
     setStatus(
       "Audio selected",
       "saved"
     );
+
+
+    els.transcribeBtn.disabled =
+      !state.modelReady;
+
   }
+);
 
-  /* =========================================================
-     BROWSER SPEECH RECOGNITION
-     NOTE:
-     This remains only as a temporary test feature.
-  ========================================================= */
 
-  function getSpeechRecognition() {
-    return (
-      window.SpeechRecognition ||
-      window.webkitSpeechRecognition ||
-      null
+/* =========================================================
+   AUDIO DECODING
+========================================================= */
+
+async function decodeAudioFile(
+  blob
+) {
+
+  const arrayBuffer =
+    await blob.arrayBuffer();
+
+
+  const AudioContext =
+    window.AudioContext ||
+    window.webkitAudioContext;
+
+
+  if (
+    !AudioContext
+  ) {
+
+    throw new Error(
+      "Web Audio API is not supported."
     );
+
   }
 
-  function setupSpeechRecognition() {
-    const SpeechRecognitionCtor =
-      getSpeechRecognition();
 
-    if (!SpeechRecognitionCtor) {
-      els.speechBtn.disabled = true;
+  const context =
+    new AudioContext();
 
-      els.speechStatus.textContent =
-        "Not supported";
 
-      return null;
-    }
+  try {
 
-    const recognition =
-      new SpeechRecognitionCtor();
-
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      state.recognitionRunning =
-        true;
-
-      els.speechBtn.textContent =
-        "Stop Browser Transcription";
-
-      els.speechStatus.textContent =
-        "Listening";
-    };
-
-    recognition.onend = () => {
-      state.recognitionRunning =
-        false;
-
-      els.speechBtn.textContent =
-        "Start Browser Transcription";
-
-      els.speechStatus.textContent =
-        "Stopped";
-    };
-
-    recognition.onerror = (
-      event
-    ) => {
-      console.warn(
-        "Speech recognition error:",
-        event.error
+    const audioBuffer =
+      await context.decodeAudioData(
+        arrayBuffer
       );
 
-      state.recognitionRunning =
-        false;
 
-      els.speechBtn.textContent =
-        "Start Browser Transcription";
+    return audioBuffer;
 
-      els.speechStatus.textContent =
-        `Error: ${
-          event.error ||
-          "unknown"
-        }`;
-    };
-
-    recognition.onresult = (
-      event
-    ) => {
-      let finalText = "";
-      let interimText = "";
-
-      for (
-        let i =
-          event.resultIndex;
-        i <
-        event.results.length;
-        i += 1
-      ) {
-        const result =
-          event.results[i];
-
-        const text =
-          result[0]?.transcript ||
-          "";
-
-        if (result.isFinal) {
-          finalText += text;
-        } else {
-          interimText += text;
-        }
-      }
-
-      const existing =
-        state.transcriptBeforeSpeech.trim();
-
-      if (finalText.trim()) {
-        state.transcriptBeforeSpeech =
-          `${existing}${
-            existing
-              ? "\n"
-              : ""
-          }${finalText.trim()}`.trim();
-      }
-
-      els.transcript.value =
-        `${state.transcriptBeforeSpeech}${
-          interimText
-            ? `\n${interimText}`
-            : ""
-        }`.trim();
-    };
-
-    return recognition;
   }
 
-  function toggleSpeechRecognition() {
-    if (!state.recognition) {
-      state.recognition =
-        setupSpeechRecognition();
+  finally {
+
+    await context.close();
+
+  }
+
+}
+
+
+function audioBufferToMonoFloat32(
+  audioBuffer
+) {
+
+  const length =
+    audioBuffer.length;
+
+
+  if (
+    audioBuffer.numberOfChannels ===
+    1
+  ) {
+
+    return audioBuffer
+      .getChannelData(
+        0
+      )
+      .slice();
+
+  }
+
+
+  const mono =
+    new Float32Array(
+      length
+    );
+
+
+  for (
+    let channel = 0;
+    channel <
+    audioBuffer.numberOfChannels;
+    channel++
+  ) {
+
+    const data =
+      audioBuffer.getChannelData(
+        channel
+      );
+
+
+    for (
+      let i = 0;
+      i < length;
+      i++
+    ) {
+
+      mono[i] +=
+        data[i] /
+        audioBuffer.numberOfChannels;
+
     }
 
-    if (!state.recognition) {
-      return;
-    }
+  }
 
-    state.recognition.lang =
-      els.languageSelect.value;
+
+  return mono;
+
+}
+
+
+function resampleTo16k(
+  input,
+  inputSampleRate
+) {
+
+  const targetRate =
+    16000;
+
+
+  if (
+    inputSampleRate ===
+    targetRate
+  ) {
+
+    return input;
+
+  }
+
+
+  const ratio =
+    targetRate /
+    inputSampleRate;
+
+
+  const outputLength =
+    Math.floor(
+      input.length *
+      ratio
+    );
+
+
+  const output =
+    new Float32Array(
+      outputLength
+    );
+
+
+  for (
+    let i = 0;
+    i < outputLength;
+    i++
+  ) {
+
+    const position =
+      i /
+      ratio;
+
+
+    const left =
+      Math.floor(
+        position
+      );
+
+
+    const right =
+      Math.min(
+        left + 1,
+        input.length - 1
+      );
+
+
+    const fraction =
+      position -
+      left;
+
+
+    output[i] =
+      input[left] *
+        (1 - fraction) +
+      input[right] *
+        fraction;
+
+  }
+
+
+  return output;
+
+}
+
+
+/* =========================================================
+   WHISPER MODEL
+========================================================= */
+
+function updateProgress(
+  percent,
+  text
+) {
+
+  els.progressBox.hidden =
+    false;
+
+  els.progressBar.style.width =
+    `${Math.max(
+      0,
+      Math.min(
+        100,
+        percent
+      )
+    )}%`;
+
+  els.progressText.textContent =
+    text;
+
+}
+
+
+async function loadModel() {
+
+  if (
+    state.modelReady
+  ) {
+
+    return;
+
+  }
+
+
+  if (
+    state.modelLoading
+  ) {
+
+    return;
+
+  }
+
+
+  state.modelLoading =
+    true;
+
+
+  els.loadModelBtn.disabled =
+    true;
+
+
+  setStatus(
+    "Loading AI model"
+  );
+
+
+  els.modelStatus.textContent =
+    "Downloading Whisper Tiny. The first download can be large.";
+
+
+  updateProgress(
+    5,
+    "Starting AI model..."
+  );
+
+
+  try {
+
+    let device =
+      "wasm";
+
 
     if (
-      state.recognitionRunning
+      "gpu" in navigator
     ) {
-      state.recognition.stop();
-      return;
+
+      device =
+        "webgpu";
+
     }
 
-    state.transcriptBeforeSpeech =
-      els.transcript.value.trim();
 
-    try {
-      state.recognition.start();
-    } catch (error) {
-      console.warn(
-        "Speech recognition start failed:",
-        error
+    els.modelStatus.textContent =
+      `Preparing local Whisper (${device}).`;
+
+
+    state.transcriber =
+      await pipeline(
+        "automatic-speech-recognition",
+        MODEL_ID,
+        {
+
+          device,
+
+          dtype:
+            device ===
+            "webgpu"
+              ? "q8"
+              : "q8",
+
+          progress_callback:
+            (data) => {
+
+              if (
+                typeof data?.progress ===
+                "number"
+              ) {
+
+                updateProgress(
+                  data.progress,
+                  `Downloading model: ${Math.round(
+                    data.progress
+                  )}%`
+                );
+
+              }
+
+            }
+
+        }
       );
-    }
-  }
 
-  /* =========================================================
-     SUMMARY
-  ========================================================= */
 
-  function cleanSentences(text) {
-    return text
-      .replace(/\s+/g, " ")
-      .split(
-        /(?<=[.!?。！？])\s+/
-      )
-      .map(
-        (item) => item.trim()
-      )
-      .filter(Boolean);
-  }
+    state.modelReady =
+      true;
 
-  function extractByKeywords(
-    sentences,
-    patterns
-  ) {
-    return sentences.filter(
-      (sentence) =>
-        patterns.some(
-          (pattern) =>
-            pattern.test(
-              sentence
-            )
-        )
+
+    state.modelLoading =
+      false;
+
+
+    els.loadModelBtn.disabled =
+      true;
+
+
+    els.loadModelBtn.textContent =
+      "Model Ready";
+
+
+    els.modelStatus.textContent =
+      `Whisper Tiny ready • ${device.toUpperCase()}`;
+
+
+    els.transcribeBtn.disabled =
+      !state.audioBlob;
+
+
+    setStatus(
+      "AI Ready",
+      "saved"
     );
+
+
+    updateProgress(
+      100,
+      "AI model ready."
+    );
+
   }
 
-  function unique(items) {
-    return [
-      ...new Set(items)
-    ];
+  catch (error) {
+
+    console.error(
+      "Whisper model error:",
+      error
+    );
+
+
+    state.modelLoading =
+      false;
+
+
+    els.loadModelBtn.disabled =
+      false;
+
+
+    els.modelStatus.textContent =
+      "Unable to load the local AI model.";
+
+
+    setStatus(
+      "AI model error"
+    );
+
+
+    updateProgress(
+      0,
+      `Model error: ${
+        error?.message ||
+        "Unknown error"
+      }`
+    );
+
+
+    alert(
+      "The local Whisper model could not be loaded. Check your internet connection and reload the page."
+    );
+
   }
 
-  function generateLocalSummary(
-    text
+}
+
+
+/* =========================================================
+   LANGUAGE SETTINGS
+========================================================= */
+
+function whisperLanguage(
+  value
+) {
+
+  if (
+    value ===
+    "id"
   ) {
-    const sentences =
-      cleanSentences(text);
 
-    if (!sentences.length) {
-      return {
-        overview:
-          "No transcript available.",
-        decisions: [],
-        actions: []
-      };
+    return "indonesian";
+
+  }
+
+
+  if (
+    value ===
+    "en"
+  ) {
+
+    return "english";
+
+  }
+
+
+  if (
+    value ===
+    "zh"
+  ) {
+
+    return "chinese";
+
+  }
+
+
+  return undefined;
+
+}
+
+
+/* =========================================================
+   TRANSCRIPTION
+========================================================= */
+
+async function transcribeAudio() {
+
+  if (
+    !state.modelReady ||
+    !state.transcriber
+  ) {
+
+    alert(
+      "Load the AI model first."
+    );
+
+    return;
+
+  }
+
+
+  if (
+    !state.audioBlob
+  ) {
+
+    alert(
+      "Record or upload an audio file first."
+    );
+
+    return;
+
+  }
+
+
+  els.transcribeBtn.disabled =
+    true;
+
+
+  setStatus(
+    "Transcribing"
+  );
+
+
+  updateProgress(
+    0,
+    "Preparing audio..."
+  );
+
+
+  try {
+
+    const audioBuffer =
+      await decodeAudioFile(
+        state.audioBlob
+      );
+
+
+    updateProgress(
+      10,
+      "Converting audio..."
+    );
+
+
+    const mono =
+      audioBufferToMonoFloat32(
+        audioBuffer
+      );
+
+
+    const audio =
+      resampleTo16k(
+        mono,
+        audioBuffer.sampleRate
+      );
+
+
+    updateProgress(
+      20,
+      "Running Whisper locally..."
+    );
+
+
+    const language =
+      whisperLanguage(
+        els.languageSelect.value
+      );
+
+
+    const options = {
+
+      chunk_length_s:
+        30,
+
+      stride_length_s:
+        5,
+
+      return_timestamps:
+        true
+
+    };
+
+
+    if (
+      language
+    ) {
+
+      options.language =
+        language;
+
     }
 
-    const decisionPatterns = [
-      /\bdecid(ed|e|ision)?\b/i,
-      /\bagree(d)?\b/i,
-      /\bapproved?\b/i,
-      /\bconfirmed?\b/i,
-      /\bkeputusan\b/i,
-      /\bsepakat\b/i,
-      /\bdisetujui\b/i,
-      /\bditetapkan\b/i,
-      /keputusannya/i,
-      /同意/,
-      /决定/,
-      /确认/
-    ];
 
-    const actionPatterns = [
-      /\baction\b/i,
-      /\baction item\b/i,
-      /\bto-do\b/i,
-      /\bnext step\b/i,
-      /\bfollow[- ]?up\b/i,
-      /\bwill\b/i,
-      /\bneed to\b/i,
-      /\bmust\b/i,
-      /\bakan\b/i,
-      /\bharus\b/i,
-      /\bperlu\b/i,
-      /\btindak lanjut\b/i,
-      /需要/,
-      /必须/
-    ];
+    const result =
+      await state.transcriber(
+        audio,
+        options
+      );
 
-    return {
-      overview:
-        sentences
-          .slice(0, 4)
-          .join(" "),
 
-      decisions:
-        unique(
-          extractByKeywords(
-            sentences,
-            decisionPatterns
-          )
-        ).slice(0, 8),
+    updateProgress(
+      90,
+      "Formatting transcript..."
+    );
 
-      actions:
-        unique(
-          extractByKeywords(
-            sentences,
-            actionPatterns
-          )
-        ).slice(0, 8)
-    };
+
+    const text =
+      typeof result?.text ===
+      "string"
+        ? result.text.trim()
+        : "";
+
+
+    if (
+      !text
+    ) {
+
+      throw new Error(
+        "Whisper returned an empty transcript."
+      );
+
+    }
+
+
+    els.transcript.value =
+      text;
+
+
+    detectLanguageFromResult(
+      result
+    );
+
+
+    updateProgress(
+      100,
+      "Transcription complete."
+    );
+
+
+    setStatus(
+      "Transcript ready",
+      "saved"
+    );
+
+
   }
 
-  function renderList(
-    element,
-    items,
-    emptyText
-  ) {
-    element.innerHTML = "";
+  catch (error) {
 
-    if (!items.length) {
+    console.error(
+      "Transcription error:",
+      error
+    );
+
+
+    setStatus(
+      "Transcription error"
+    );
+
+
+    updateProgress(
+      0,
+      `Transcription error: ${
+        error?.message ||
+        "Unknown error"
+      }`
+    );
+
+
+    alert(
+      `Transcription failed.\n\n${
+        error?.message ||
+        "Unknown error"
+      }`
+    );
+
+  }
+
+  finally {
+
+    els.transcribeBtn.disabled =
+      false;
+
+  }
+
+}
+
+
+/* =========================================================
+   LANGUAGE DISPLAY
+========================================================= */
+
+function detectLanguageFromResult(
+  result
+) {
+
+  let language =
+    "Auto / multilingual";
+
+
+  if (
+    els.languageSelect.value ===
+    "id"
+  ) {
+
+    language =
+      "Indonesian";
+
+  }
+
+  else if (
+    els.languageSelect.value ===
+    "en"
+  ) {
+
+    language =
+      "English";
+
+  }
+
+  else if (
+    els.languageSelect.value ===
+    "zh"
+  ) {
+
+    language =
+      "Mandarin";
+
+  }
+
+  else if (
+    els.languageSelect.value ===
+    "mixed"
+  ) {
+
+    language =
+      "Mixed ID + EN + ZH";
+
+  }
+
+
+  els.detectedLanguage.textContent =
+    `Language: ${language}`;
+
+}
+
+
+/* =========================================================
+   SUMMARY
+========================================================= */
+
+function splitSentences(
+  text
+) {
+
+  return text
+    .replace(
+      /\s+/g,
+      " "
+    )
+    .split(
+      /(?<=[.!?。！？])\s+/
+    )
+    .map(
+      (item) =>
+        item.trim()
+    )
+    .filter(
+      Boolean
+    );
+
+}
+
+
+function unique(
+  items
+) {
+
+  return [
+    ...new Set(
+      items
+    )
+  ];
+
+}
+
+
+function extractKeywords(
+  sentences,
+  patterns
+) {
+
+  return sentences.filter(
+    (sentence) =>
+      patterns.some(
+        (pattern) =>
+          pattern.test(
+            sentence
+          )
+      )
+  );
+
+}
+
+
+function renderList(
+  element,
+  items,
+  empty
+) {
+
+  element.innerHTML =
+    "";
+
+
+  if (
+    !items.length
+  ) {
+
+    const li =
+      document.createElement(
+        "li"
+      );
+
+    li.textContent =
+      empty;
+
+    element.appendChild(
+      li
+    );
+
+    return;
+
+  }
+
+
+  items.forEach(
+    (item) => {
+
       const li =
         document.createElement(
           "li"
         );
 
       li.textContent =
-        emptyText;
+        item;
 
-      element.appendChild(li);
+      element.appendChild(
+        li
+      );
 
-      return;
     }
+  );
 
-    items.forEach((item) => {
-      const li =
-        document.createElement(
-          "li"
-        );
+}
 
-      li.textContent = item;
 
-      element.appendChild(li);
-    });
+function generateSummary() {
+
+  const text =
+    els.transcript.value.trim();
+
+
+  if (
+    !text
+  ) {
+
+    alert(
+      "Transcribe the meeting first."
+    );
+
+    return;
+
   }
 
-  function generateSummary() {
-    const text =
-      els.transcript.value.trim();
 
-    if (!text) {
-      els.summaryOverview.textContent =
-        "Add a transcript first.";
-
-      renderList(
-        els.decisionsList,
-        [],
-        "No decisions extracted yet."
-      );
-
-      renderList(
-        els.actionsList,
-        [],
-        "No action items extracted yet."
-      );
-
-      return;
-    }
-
-    const result =
-      generateLocalSummary(
-        text
-      );
-
-    els.summaryOverview.textContent =
-      result.overview;
-
-    renderList(
-      els.decisionsList,
-      result.decisions,
-      "No decision keywords were detected."
+  const sentences =
+    splitSentences(
+      text
     );
 
-    renderList(
-      els.actionsList,
-      result.actions,
-      "No action-item keywords were detected."
-    );
 
-    setStatus(
-      "Summary generated",
-      "saved"
-    );
-  }
-
-  /* =========================================================
-     LOCAL STORAGE
-  ========================================================= */
-
-  function buildDraft() {
-    return {
-      version: 2,
-      savedAt:
-        new Date().toISOString(),
-
-      language:
-        els.languageSelect.value,
-
-      summaryLanguage:
-        els.summaryLanguageSelect
-          .value,
-
-      transcript:
-        els.transcript.value,
-
-      overview:
-        els.summaryOverview
-          .textContent,
-
-      decisions:
+  const decisions =
+    unique(
+      extractKeywords(
+        sentences,
         [
-          ...els.decisionsList
-            .querySelectorAll(
-              "li"
-            )
-        ].map(
-          (li) =>
-            li.textContent
-        ),
+          /\bdecid(ed|e|es|ing)?\b/i,
+          /\bdecision\b/i,
+          /\bagree(d|ment)?\b/i,
+          /\bapproved?\b/i,
+          /\bconfirmed?\b/i,
+          /\bkeputusan\b/i,
+          /\bsepakat\b/i,
+          /\bdisetujui\b/i,
+          /\bditetapkan\b/i,
+          /决定/,
+          /同意/,
+          /确认/
+        ]
+      )
+    ).slice(
+      0,
+      10
+    );
 
-      actions:
+
+  const actions =
+    unique(
+      extractKeywords(
+        sentences,
         [
-          ...els.actionsList
-            .querySelectorAll(
-              "li"
-            )
-        ].map(
-          (li) =>
-            li.textContent
-        )
-    };
-  }
+          /\baction\b/i,
+          /\baction item\b/i,
+          /\bnext step\b/i,
+          /\bfollow[- ]?up\b/i,
+          /\bwill\b/i,
+          /\bneed to\b/i,
+          /\bmust\b/i,
+          /\bakan\b/i,
+          /\bharus\b/i,
+          /\bperlu\b/i,
+          /\btindak lanjut\b/i,
+          /需要/,
+          /必须/
+        ]
+      )
+    ).slice(
+      0,
+      10
+    );
 
-  function saveDraft() {
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(
-          buildDraft()
-        )
+
+  els.summaryOverview.textContent =
+    sentences
+      .slice(
+        0,
+        5
+      )
+      .join(
+        " "
       );
 
-      setStatus(
-        "Draft saved",
-        "saved"
-      );
-    } catch (error) {
-      console.error(error);
 
-      setStatus(
-        "Save failed"
-      );
+  renderList(
+    els.decisionsList,
+    decisions,
+    "No decision keywords detected."
+  );
 
-      alert(
-        "Unable to save the draft in this browser."
-      );
-    }
-  }
 
-  function loadDraft() {
-    try {
-      const raw =
-        localStorage.getItem(
-          STORAGE_KEY
-        );
+  renderList(
+    els.actionsList,
+    actions,
+    "No action-item keywords detected."
+  );
 
-      if (!raw) {
-        return;
-      }
 
-      const draft =
-        JSON.parse(raw);
+  setStatus(
+    "Summary generated",
+    "saved"
+  );
 
-      if (
-        !draft ||
-        typeof draft !==
-          "object"
-      ) {
-        return;
-      }
+}
 
-      if (draft.language) {
-        els.languageSelect.value =
-          draft.language;
-      }
 
-      if (draft.summaryLanguage) {
-        els.summaryLanguageSelect.value =
-          draft.summaryLanguage;
-      }
+/* =========================================================
+   SAVE / EXPORT
+========================================================= */
 
-      if (
-        typeof draft.transcript ===
-        "string"
-      ) {
-        els.transcript.value =
-          draft.transcript;
-      }
+function saveDraft() {
 
-      if (
-        typeof draft.overview ===
-        "string"
-      ) {
-        els.summaryOverview.textContent =
-          draft.overview;
-      }
+  const data = {
 
-      if (
-        Array.isArray(
-          draft.decisions
-        )
-      ) {
-        renderList(
-          els.decisionsList,
-          draft.decisions,
-          "No decisions."
-        );
-      }
+    transcript:
+      els.transcript.value,
 
-      if (
-        Array.isArray(
-          draft.actions
-        )
-      ) {
-        renderList(
-          els.actionsList,
-          draft.actions,
-          "No action items."
-        );
-      }
+    summary:
+      els.summaryOverview
+        .textContent,
 
-      setStatus(
-        "Draft restored",
-        "saved"
-      );
-    } catch (error) {
-      console.warn(
-        "Could not restore draft:",
-        error
-      );
-    }
-  }
-
-  /* =========================================================
-     EXPORT
-  ========================================================= */
-
-  function exportMeeting() {
-    const now =
-      new Date();
-
-    const decisions =
+    decisions:
       [
         ...els.decisionsList
           .querySelectorAll(
             "li"
           )
-      ]
-        .map(
-          (li) =>
-            `- ${li.textContent}`
-        )
-        .join("\n");
+      ].map(
+        (li) =>
+          li.textContent
+      ),
 
-    const actions =
+    actions:
       [
         ...els.actionsList
           .querySelectorAll(
             "li"
           )
-      ]
-        .map(
-          (li) =>
-            `- ${li.textContent}`
+      ].map(
+        (li) =>
+          li.textContent
+      ),
+
+    savedAt:
+      new Date().toISOString()
+
+  };
+
+
+  localStorage.setItem(
+    "MeetingSummaryDraft",
+    JSON.stringify(
+      data
+    )
+  );
+
+
+  setStatus(
+    "Draft saved",
+    "saved"
+  );
+
+}
+
+
+function exportTxt() {
+
+  const content = [
+
+    "MEETINGSUMMARY",
+
+    "",
+
+    "EXECUTIVE SUMMARY",
+
+    els.summaryOverview
+      .textContent,
+
+    "",
+
+    "KEY DECISIONS",
+
+    ...[
+      ...els.decisionsList
+        .querySelectorAll(
+          "li"
         )
-        .join("\n");
+    ].map(
+      (li) =>
+        `- ${li.textContent}`
+    ),
 
-    const content = [
-      "MEETINGSUMMARY",
-      "================",
-      `Date: ${now.toLocaleString()}`,
-      "",
-      "OVERVIEW",
-      "--------",
-      els.summaryOverview
-        .textContent ||
-        "No summary.",
-      "",
-      "KEY DECISIONS",
-      "-------------",
-      decisions ||
-        "- None",
-      "",
-      "ACTION ITEMS",
-      "------------",
-      actions ||
-        "- None",
-      "",
-      "TRANSCRIPT",
-      "----------",
-      els.transcript.value ||
-        "No transcript."
-    ].join("\n");
+    "",
 
-    const blob =
-      new Blob(
-        [content],
-        {
-          type:
-            "text/plain;charset=utf-8"
-        }
-      );
+    "ACTION ITEMS",
 
-    const url =
-      URL.createObjectURL(
-        blob
-      );
+    ...[
+      ...els.actionsList
+        .querySelectorAll(
+          "li"
+        )
+    ].map(
+      (li) =>
+        `- ${li.textContent}`
+    ),
 
-    const anchor =
-      document.createElement(
-        "a"
-      );
+    "",
 
-    anchor.href = url;
+    "TRANSCRIPT",
 
-    anchor.download =
-      `MeetingSummary-${
-        now
-          .toISOString()
-          .slice(0, 10)
-      }.txt`;
+    els.transcript.value
 
-    document.body.appendChild(
-      anchor
-    );
+  ].join(
+    "\n"
+  );
 
-    anchor.click();
 
-    anchor.remove();
-
-    window.setTimeout(
-      () =>
-        URL.revokeObjectURL(
-          url
-        ),
-      1000
-    );
-
-    setStatus(
-      "Exported",
-      "saved"
-    );
-  }
-
-  /* =========================================================
-     CLEAR
-  ========================================================= */
-
-  function clearTranscript() {
-    els.transcript.value = "";
-
-    state.transcriptBeforeSpeech =
-      "";
-
-    setStatus(
-      "Transcript cleared"
-    );
-  }
-
-  function clearMeeting() {
-    const confirmed =
-      window.confirm(
-        "Clear the current transcript, summary, and saved draft?"
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    if (
-      state.recordingState !==
-      "inactive"
-    ) {
-      if (
-        state.recorder &&
-        state.recorder.state !==
-          "inactive"
-      ) {
-        state.recorder.stop();
+  const blob =
+    new Blob(
+      [content],
+      {
+        type:
+          "text/plain;charset=utf-8"
       }
-
-      stopStream();
-    }
-
-    resetTimer();
-
-    localStorage.removeItem(
-      STORAGE_KEY
     );
 
-    els.transcript.value = "";
 
-    els.summaryOverview.textContent =
-      "No summary yet.";
-
-    renderList(
-      els.decisionsList,
-      [],
-      "No decisions extracted yet."
+  const url =
+    URL.createObjectURL(
+      blob
     );
 
-    renderList(
-      els.actionsList,
-      [],
-      "No action items extracted yet."
+
+  const a =
+    document.createElement(
+      "a"
     );
 
-    els.audioFile.value = "";
 
-    state.selectedAudioFile =
-      null;
+  a.href =
+    url;
 
-    revokeAudioUrl();
+  a.download =
+    `MeetingSummary-${
+      new Date()
+        .toISOString()
+        .slice(
+          0,
+          10
+        )
+    }.txt`;
 
-    els.audioPreview.removeAttribute(
-      "src"
-    );
 
-    els.audioPreview.hidden =
-      true;
+  document.body.appendChild(
+    a
+  );
 
-    els.fileInfo.hidden = true;
+  a.click();
 
-    els.recordingInfo.hidden =
-      true;
+  a.remove();
 
-    state.recorder = null;
-    state.chunks = [];
-    state.recordingState =
-      "inactive";
 
-    els.startBtn.disabled =
-      false;
+  setTimeout(
+    () =>
+      URL.revokeObjectURL(
+        url
+      ),
+    1000
+  );
 
-    els.pauseBtn.disabled =
-      true;
+}
 
-    els.stopBtn.disabled =
-      true;
 
-    els.pauseBtn.textContent =
-      "Pause";
+function clearTranscript() {
 
-    setStatus("Ready");
+  els.transcript.value =
+    "";
+
+  els.detectedLanguage.textContent =
+    "Language: —";
+
+}
+
+
+function clearAll() {
+
+  if (
+    !confirm(
+      "Clear the current meeting data?"
+    )
+  ) {
+
+    return;
+
   }
 
-  /* =========================================================
-     EVENTS
-  ========================================================= */
 
-  els.startBtn.addEventListener(
-    "click",
-    startRecording
+  clearTranscript();
+
+
+  els.summaryOverview.textContent =
+    "No summary yet.";
+
+
+  renderList(
+    els.decisionsList,
+    [],
+    "No decisions extracted yet."
   );
 
-  els.pauseBtn.addEventListener(
-    "click",
-    pauseRecording
+
+  renderList(
+    els.actionsList,
+    [],
+    "No action items extracted yet."
   );
 
-  els.stopBtn.addEventListener(
-    "click",
-    stopRecording
+
+  els.audioFile.value =
+    "";
+
+
+  state.audioBlob =
+    null;
+
+
+  revokeAudioUrl();
+
+
+  els.audioPreview.removeAttribute(
+    "src"
   );
 
-  els.audioFile.addEventListener(
-    "change",
-    handleAudioFile
+
+  els.audioPreview.hidden =
+    true;
+
+
+  els.fileInfo.hidden =
+    true;
+
+
+  els.recordingInfo.hidden =
+    true;
+
+
+  resetTimer();
+
+
+  setStatus(
+    "Ready"
   );
 
-  els.speechBtn.addEventListener(
-    "click",
-    toggleSpeechRecognition
-  );
+}
 
-  els.generateBtn.addEventListener(
-    "click",
-    generateSummary
-  );
 
-  els.clearTranscriptBtn.addEventListener(
-    "click",
-    clearTranscript
-  );
+/* =========================================================
+   EVENTS
+========================================================= */
 
-  els.exportBtn.addEventListener(
-    "click",
-    exportMeeting
-  );
+els.startBtn.addEventListener(
+  "click",
+  startRecording
+);
 
-  els.saveBtn.addEventListener(
-    "click",
-    saveDraft
-  );
 
-  els.clearAllBtn.addEventListener(
-    "click",
-    clearMeeting
-  );
+els.pauseBtn.addEventListener(
+  "click",
+  pauseRecording
+);
 
-  /* =========================================================
-     LANGUAGE
-  ========================================================= */
 
-  els.languageSelect.addEventListener(
-    "change",
-    () => {
-      if (
-        state.recognitionRunning &&
-        state.recognition
-      ) {
-        state.recognition.stop();
+els.stopBtn.addEventListener(
+  "click",
+  stopRecording
+);
 
-        window.setTimeout(
-          () => {
-            if (
-              !state.recognition
-            ) {
-              return;
-            }
 
-            state.recognition.lang =
-              els.languageSelect.value;
+els.loadModelBtn.addEventListener(
+  "click",
+  loadModel
+);
 
-            try {
-              state.recognition.start();
-            } catch (error) {
-              console.warn(
-                error
-              );
-            }
-          },
-          150
-        );
-      }
-    }
-  );
 
-  /* =========================================================
-     CLEANUP
-  ========================================================= */
+els.transcribeBtn.addEventListener(
+  "click",
+  transcribeAudio
+);
 
-  window.addEventListener(
-    "beforeunload",
-    () => {
-      stopTimer();
-      stopStream();
-      revokeAudioUrl();
-    }
-  );
 
-  /* =========================================================
-     INIT
-  ========================================================= */
+els.generateBtn.addEventListener(
+  "click",
+  generateSummary
+);
 
-  state.recognition =
-    setupSpeechRecognition();
 
-  loadDraft();
+els.clearTranscriptBtn.addEventListener(
+  "click",
+  clearTranscript
+);
 
-  // Ensure the initial UI is consistent.
-  els.startBtn.disabled = false;
-  els.pauseBtn.disabled = true;
-  els.stopBtn.disabled = true;
 
-  els.timer.textContent =
-    "00:00:00";
-})();
+els.saveBtn.addEventListener(
+  "click",
+  saveDraft
+);
+
+
+els.exportBtn.addEventListener(
+  "click",
+  exportTxt
+);
+
+
+els.clearAllBtn.addEventListener(
+  "click",
+  clearAll
+);
+
+
+/* =========================================================
+   INITIAL STATE
+========================================================= */
+
+els.pauseBtn.disabled =
+  true;
+
+els.stopBtn.disabled =
+  true;
+
+els.transcribeBtn.disabled =
+  true;
+
+
+els.timer.textContent =
+  "00:00:00";
+
+
+setStatus(
+  "Ready"
+);
