@@ -1,155 +1,463 @@
-<!doctype html>
-<html lang="id">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0f172a">
-  <meta name="description" content="MeetingSummary - lightweight meeting recorder and summary workspace">
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  >
+
+  <meta
+    name="theme-color"
+    content="#111827"
+  >
+
   <title>MeetingSummary</title>
-  <link rel="stylesheet" href="style.css">
+
+  <link rel="stylesheet" href="./style.css">
 </head>
+
 <body>
-  <main class="app-shell">
-    <header class="topbar">
+
+  <main class="app">
+
+    <header class="app-header">
       <div>
-        <p class="eyebrow">MEETING ASSISTANT</p>
         <h1>MeetingSummary</h1>
-        <p class="subtitle">Record, transcribe, organize decisions, and track action items.</p>
+        <p>Local-first multilingual meeting assistant</p>
       </div>
-      <div id="statusBadge" class="status-badge">Ready</div>
+
+      <span id="statusBadge" class="status-badge">
+        Ready
+      </span>
     </header>
 
+
+    <!-- =====================================================
+         RECORDER
+    ====================================================== -->
+
     <section class="card">
-      <div class="section-heading">
-        <div>
-          <h2>Meeting Recorder</h2>
-          <p>Record audio directly from your browser.</p>
-        </div>
-        <div id="timer" class="timer">00:00:00</div>
+
+      <div class="section-title">
+        <h2>Meeting Recorder</h2>
+        <p>
+          Record your meeting directly in the browser.
+        </p>
       </div>
 
-      <div class="controls">
-        <button id="startBtn" class="btn primary" type="button">Start Recording</button>
-        <button id="pauseBtn" class="btn secondary" type="button" disabled>Pause</button>
-        <button id="stopBtn" class="btn danger" type="button" disabled>Stop</button>
+      <div class="timer" id="timer">
+        00:00:00
       </div>
 
-      <div class="recording-meta">
-        <label>
-          <span>Meeting language</span>
-          <select id="languageSelect">
-            <option value="id-ID">Bahasa Indonesia</option>
-            <option value="en-US">English</option>
-            <option value="zh-CN">简体中文 (Mandarin)</option>
-          </select>
-        </label>
+      <div class="recording-controls">
 
-        <label>
-          <span>Summary language</span>
-          <select id="summaryLanguageSelect">
-            <option value="id">Bahasa Indonesia</option>
-            <option value="en">English</option>
-            <option value="zh">简体中文</option>
-          </select>
-        </label>
+        <button
+          id="startBtn"
+          class="btn primary"
+          type="button"
+        >
+          Start Recording
+        </button>
+
+        <button
+          id="pauseBtn"
+          class="btn"
+          type="button"
+          disabled
+        >
+          Pause
+        </button>
+
+        <button
+          id="stopBtn"
+          class="btn danger"
+          type="button"
+          disabled
+        >
+          Stop
+        </button>
+
       </div>
 
-      <div id="recordingInfo" class="info-box" hidden></div>
-      <audio id="audioPreview" controls hidden></audio>
+      <div
+        id="recordingInfo"
+        class="info"
+        hidden
+      ></div>
+
+      <audio
+        id="audioPreview"
+        controls
+        hidden
+      ></audio>
+
     </section>
 
+
+    <!-- =====================================================
+         AUDIO UPLOAD
+    ====================================================== -->
+
     <section class="card">
-      <div class="section-heading">
-        <div>
-          <h2>Upload Existing Recording</h2>
-          <p>Choose an audio file already stored on your device.</p>
-        </div>
+
+      <div class="section-title">
+        <h2>Upload Existing Recording</h2>
+
+        <p>
+          Use an existing MP3, M4A, WAV or WebM recording.
+        </p>
       </div>
 
-      <label class="file-picker">
-        <span>Select audio file</span>
-        <input id="audioFile" type="file" accept="audio/*">
+      <label
+        class="file-label"
+        for="audioFile"
+      >
+        Choose Audio File
       </label>
 
-      <div id="fileInfo" class="info-box" hidden></div>
+      <input
+        id="audioFile"
+        type="file"
+        accept="audio/*,.m4a,.mp3,.wav,.webm"
+      >
+
+      <div
+        id="fileInfo"
+        class="info"
+        hidden
+      ></div>
+
     </section>
 
-    <section class="grid">
-      <article class="card">
-        <div class="section-heading">
-          <div>
-            <h2>Transcript</h2>
-            <p>You can edit the transcript manually.</p>
-          </div>
-          <span id="speechStatus" class="mini-status">Not started</span>
-        </div>
 
-        <textarea id="transcript" rows="14" placeholder="Transcript will appear here..."></textarea>
-
-        <div class="button-row">
-          <button id="speechBtn" class="btn secondary" type="button">Start Browser Transcription</button>
-          <button id="clearTranscriptBtn" class="btn ghost" type="button">Clear</button>
-        </div>
-      </article>
-
-      <article class="card">
-        <div class="section-heading">
-          <div>
-            <h2>Meeting Summary</h2>
-            <p>Local summary for testing. No API key is required.</p>
-          </div>
-        </div>
-
-        <div class="summary-block">
-          <h3>Overview</h3>
-          <div id="summaryOverview" class="output">No summary yet.</div>
-        </div>
-
-        <div class="summary-block">
-          <h3>Key Decisions</h3>
-          <ul id="decisionsList" class="output-list">
-            <li>No decisions extracted yet.</li>
-          </ul>
-        </div>
-
-        <div class="summary-block">
-          <h3>Action Items</h3>
-          <ul id="actionsList" class="output-list">
-            <li>No action items extracted yet.</li>
-          </ul>
-        </div>
-
-        <button id="generateBtn" class="btn primary full" type="button">
-          Generate Local Summary
-        </button>
-      </article>
-    </section>
+    <!-- =====================================================
+         TRANSCRIPTION
+    ====================================================== -->
 
     <section class="card">
-      <div class="section-heading">
+
+      <div class="section-title">
+
+        <h2>AI Transcription</h2>
+
+        <p>
+          Whisper runs locally in your browser.
+          Your audio is processed on your device.
+        </p>
+
+      </div>
+
+
+      <div class="form-grid">
+
+        <label>
+          Listening Language
+
+          <select id="languageSelect">
+
+            <option value="auto" selected>
+              Auto Detect
+            </option>
+
+            <option value="id">
+              Indonesian
+            </option>
+
+            <option value="en">
+              English
+            </option>
+
+            <option value="zh">
+              Mandarin
+            </option>
+
+            <option value="mixed">
+              Mixed — ID + EN + ZH
+            </option>
+
+          </select>
+
+        </label>
+
+
+        <label>
+          Transcript Output
+
+          <select id="outputLanguage">
+
+            <option value="original" selected>
+              Original
+            </option>
+
+            <option value="id">
+              Indonesian
+            </option>
+
+            <option value="en">
+              English
+            </option>
+
+            <option value="zh">
+              Mandarin
+            </option>
+
+          </select>
+
+        </label>
+
+      </div>
+
+
+      <div class="model-box">
+
         <div>
-          <h2>Export & Local Data</h2>
-          <p>Save the current draft in this browser or export a text report.</p>
+
+          <strong>Local Whisper</strong>
+
+          <p id="modelStatus">
+            Model not loaded.
+          </p>
+
         </div>
+
+        <button
+          id="loadModelBtn"
+          class="btn secondary"
+          type="button"
+        >
+          Load AI Model
+        </button>
+
       </div>
 
-      <div class="button-row">
-        <button id="exportBtn" class="btn secondary" type="button">Export Meeting TXT</button>
-        <button id="saveBtn" class="btn secondary" type="button">Save Draft Locally</button>
-        <button id="clearAllBtn" class="btn ghost" type="button">Clear Meeting</button>
+
+      <button
+        id="transcribeBtn"
+        class="btn primary full"
+        type="button"
+        disabled
+      >
+        Transcribe Recording
+      </button>
+
+
+      <div
+        id="progressBox"
+        class="progress-box"
+        hidden
+      >
+
+        <div
+          id="progressText"
+          class="progress-text"
+        >
+          Preparing...
+        </div>
+
+        <div class="progress-track">
+
+          <div
+            id="progressBar"
+            class="progress-bar"
+          ></div>
+
+        </div>
+
       </div>
 
-      <p class="privacy-note">
-        This prototype does not send transcript text or audio to a server.
-      </p>
+
+      <div class="transcript-header">
+
+        <h3>Original Transcript</h3>
+
+        <span id="detectedLanguage">
+          Language: —
+        </span>
+
+      </div>
+
+
+      <textarea
+        id="transcript"
+        class="transcript"
+        placeholder="Your transcript will appear here..."
+        spellcheck="false"
+      ></textarea>
+
+
+      <div class="transcript-actions">
+
+        <button
+          id="clearTranscriptBtn"
+          class="btn"
+          type="button"
+        >
+          Clear Transcript
+        </button>
+
+      </div>
+
     </section>
 
+
+    <!-- =====================================================
+         SUMMARY
+    ====================================================== -->
+
+    <section class="card">
+
+      <div class="section-title">
+
+        <h2>Meeting Analysis</h2>
+
+        <p>
+          Local prototype analysis. AI summary engine will be
+          upgraded after transcription is validated.
+        </p>
+
+      </div>
+
+
+      <label>
+
+        Summary Language
+
+        <select id="summaryLanguageSelect">
+
+          <option value="id" selected>
+            Indonesian
+          </option>
+
+          <option value="en">
+            English
+          </option>
+
+          <option value="zh">
+            Mandarin
+          </option>
+
+        </select>
+
+      </label>
+
+
+      <button
+        id="generateBtn"
+        class="btn primary full"
+        type="button"
+      >
+        Generate Summary
+      </button>
+
+
+      <div class="summary-block">
+
+        <h3>Executive Summary</h3>
+
+        <div
+          id="summaryOverview"
+          class="summary-content"
+        >
+          No summary yet.
+        </div>
+
+      </div>
+
+
+      <div class="summary-block">
+
+        <h3>Key Decisions</h3>
+
+        <ul id="decisionsList">
+          <li>
+            No decisions extracted yet.
+          </li>
+        </ul>
+
+      </div>
+
+
+      <div class="summary-block">
+
+        <h3>Action Items</h3>
+
+        <ul id="actionsList">
+          <li>
+            No action items extracted yet.
+          </li>
+        </ul>
+
+      </div>
+
+    </section>
+
+
+    <!-- =====================================================
+         DATA
+    ====================================================== -->
+
+    <section class="card">
+
+      <div class="section-title">
+
+        <h2>Meeting Data</h2>
+
+      </div>
+
+      <div class="recording-controls">
+
+        <button
+          id="saveBtn"
+          class="btn"
+          type="button"
+        >
+          Save Draft
+        </button>
+
+        <button
+          id="exportBtn"
+          class="btn"
+          type="button"
+        >
+          Export TXT
+        </button>
+
+        <button
+          id="clearAllBtn"
+          class="btn danger"
+          type="button"
+        >
+          Clear All
+        </button>
+
+      </div>
+
+    </section>
+
+
     <footer>
-      <span>MeetingSummary v0.1</span>
-      <span>Local-first • No API key required</span>
+
+      <p>
+        MeetingSummary • Local-first prototype
+      </p>
+
     </footer>
+
   </main>
 
-  <script src="app.js" defer></script>
+
+  <!--
+    IMPORTANT:
+    app.js is an ES module because it imports
+    Transformers.js from the official CDN.
+  -->
+
+  <script
+    type="module"
+    src="./app.js"
+  ></script>
+
 </body>
 </html>
