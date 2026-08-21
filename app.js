@@ -1,191 +1,161 @@
-class MeetingRecorder {
-  constructor(options = {}) {
-    this.stream = null;
-    this.recorder = null;
-    this.chunks = [];
-    this.startTime = null;
-    this.elapsedBeforePause = 0;
-    this.isRecording = false;
-    this.isPaused = false;
-    this.timerRAF = null;
-    this.onTimerUpdate = options.onTimerUpdate || (() => {});
-    this.onError = options.onError || ((e) => console.error(e));
-    
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    this.mimeType = isIOS ? 'audio/mp4;codecs=mp4a.40.2' : 'audio/webm;codecs=opus';
-  }
+import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
 
-  async start() {
-    if (this.isRecording && !this.isPaused) return;
+// Elemen DOM
+const statusEl = document.getElementById('model-status');
+const btnRecord = document.getElementById('btn-record');
+const btnStop = document.getElementById('btn-stop');
+const btnTranscribe = document.getElementById('btn-transcribe');
+const timerEl = document.getElementById('timer');
+const infoEl = document.getElementById('record-info');
+const audioPreview = document.getElementById('audio-preview');
+const resultBox = document.getElementById('result-box');
+const transcriptText = document.getElementById('transcript-text');
+const btnCopy = document.getElementById('btn-copy');
+
+let transcriber = null;
+let mediaRecorder = null;
+let audioChunks = [];
+let recordedBlob = null;
+let timerInterval = null;
+let seconds = 0;
+
+// ✅ Inisialisasi model saat halaman dimuat
+async function initModel() {
     try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (AudioContext) { const ctx = new AudioContext(); await ctx.resume(); }
-      this.stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 44100, channelCount: 1 } 
-      });
-      this.recorder = new MediaRecorder(this.stream, { mimeType: this.mimeType, audioBitsPerSecond: 128000 });
-      this.chunks = [];
-      this.recorder.ondataavailable = (e) => { if (e.data.size > 0) this.chunks.push(e.data); };
-      this.recorder.start(1000);
-      this.startTime = performance.now();
-      this.isRecording = true;
-      this.isPaused = false;
-      this._startTimer();
-    } catch (err) { this.onError(err); }
-  }
-
-  pause() {
-    if (!this.isRecording || this.isPaused) return;
-    this.recorder.stop();
-    this.stream.getTracks().forEach(t => t.stop());
-    this.elapsedBeforePause += performance.now() - this.startTime;
-    this.isPaused = true;
-    this._stopTimer();
-  }
-
-  async resume() {
-    if (!this.isRecording || !this.isPaused) return;
-    try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (AudioContext) { const ctx = new AudioContext(); await ctx.resume(); }
-      this.stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 44100, channelCount: 1 } 
-      });
-      this.recorder = new MediaRecorder(this.stream, { mimeType: this.mimeType, audioBitsPerSecond: 128000 });
-      this.recorder.ondataavailable = (e) => { if (e.data.size > 0) this.chunks.push(e.data); };
-      this.recorder.start(1000);
-      this.startTime = performance.now();
-      this.isPaused = false;
-      this._startTimer();
-    } catch (err) { this.onError(err); }
-  }
-
-  stop() {
-    if (!this.isRecording) return null;
-    this.recorder.stop();
-    this.stream.getTracks().forEach(t => t.stop());
-    this._stopTimer();
-    const duration = this.isPaused ? this.elapsedBeforePause : this.elapsedBeforePause + (performance.now() - this.startTime);
-    const blob = new Blob(this.chunks, { type: this.mimeType });
-    this._reset();
-    return { blob, duration, type: this.mimeType };
-  }
-
-  _startTimer() {
-    const tick = () => {
-      if (!this.isRecording || this.isPaused) return;
-      const current = this.elapsedBeforePause + (performance.now() - this.startTime);
-      this.onTimerUpdate(current);
-      this.timerRAF = requestAnimationFrame(tick);
-    };
-    this.timerRAF = requestAnimationFrame(tick);
-  }
-
-  _stopTimer() { if (this.timerRAF) cancelAnimationFrame(this.timerRAF); }
-  
-  _reset() {
-    this.stream = null; this.recorder = null; this.chunks = [];
-    this.startTime = null; this.elapsedBeforePause = 0;
-    this.isRecording = false; this.isPaused = false;
-    this._stopTimer(); this.onTimerUpdate(0);
-  }
+        // Gunakan whisper-tiny agar muat di RAM mobile
+        transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny');
+        
+        statusEl.className = 'status-box ready';
+        statusEl.textContent = '✅ Mesin AI siap! Silakan rekam.';
+        btnRecord.disabled = false;
+    } catch (err) {
+        console.error('Model load failed:', err);
+        statusEl.className = 'status-box error';
+        statusEl.innerHTML = `❌ Gagal memuat AI. <small>${err.message} Coba refresh halaman atau gunakan Chrome.</small>`;
+    }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  const els = {
-    timer: document.getElementById('timer-display'),
-    btnRec: document.getElementById('btn-record'),
-    btnPause: document.getElementById('btn-pause'),
-    btnResume: document.getElementById('btn-resume'),
-    btnStop: document.getElementById('btn-stop'),
-    statusRec: document.getElementById('record-status'),
-    playerSection: document.getElementById('player-section'),
-    audioPlayer: document.getElementById('audio-player'),
-    btnTranscribe: document.getElementById('btn-transcribe'),
-    statusTranscribe: document.getElementById('transcribe-status'),
-    uploadInput: document.getElementById('audio-upload'),
-    transcriptOut: document.getElementById('transcript-output')
-  };
+// Jalankan inisialisasi
+initModel();
 
-  let currentAudioBlob = null;
+// Timer helper
+function formatTime(s) {
+    const m = Math.floor(s / 60).toString().padStart(2, '0');
+    const sec = (s % 60).toString().padStart(2, '0');
+    return `${m}:${sec}`;
+}
 
-  const recorder = new MeetingRecorder({
-    onTimerUpdate: (ms) => {
-      const m = Math.floor(ms / 60000).toString().padStart(2, '0');
-      const s = Math.floor((ms % 60000) / 1000).toString().padStart(2, '0');
-      els.timer.textContent = `${m}:${s}`;
-    },
-    onError: (e) => els.statusRec.textContent = `❌ ${e.message}`
-  });
+function startTimer() {
+    seconds = 0;
+    timerEl.textContent = '00:00';
+    timerInterval = setInterval(() => {
+        seconds++;
+        timerEl.textContent = formatTime(seconds);
+        // Batas aman untuk mobile: 60 detik
+        if (seconds >= 60) btnStop.click();
+    }, 1000);
+}
 
-  els.btnRec.onclick = async () => {
-    await recorder.start();
-    els.btnRec.disabled = true; els.btnPause.disabled = false; els.btnStop.disabled = false;
-    els.btnResume.style.display = 'none';
-    els.playerSection.style.display = 'none';
-    els.statusRec.textContent = '🔴 Recording...';
-  };
+function stopTimer() {
+    clearInterval(timerInterval);
+}
 
-  els.btnPause.onclick = () => {
-    recorder.pause();
-    els.btnPause.style.display = 'none'; els.btnResume.style.display = 'inline-block';
-    els.statusRec.textContent = ' Paused';
-  };
-
-  els.btnResume.onclick = async () => {
-    await recorder.resume();
-    els.btnResume.style.display = 'none'; els.btnPause.style.display = 'inline-block';
-    els.statusRec.textContent = '🔴 Recording...';
-  };
-
-  els.btnStop.onclick = () => {
-    const result = recorder.stop();
-    if (result) {
-      currentAudioBlob = result.blob;
-      const url = URL.createObjectURL(result.blob);
-      els.audioPlayer.src = url;
-      els.playerSection.style.display = 'block';
-      els.statusRec.textContent = `✅ Saved: ${(result.duration/1000).toFixed(1)}s | Ready to play`;
-      els.statusTranscribe.textContent = "Click Transcribe to start AI.";
-      els.transcriptOut.textContent = "Waiting for transcription...";
-    }
-    els.btnRec.disabled = false; els.btnPause.disabled = true; els.btnStop.disabled = true;
-    els.btnPause.style.display = 'inline-block'; els.btnResume.style.display = 'none';
-  };
-
-  els.uploadInput.onchange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    currentAudioBlob = file;
-    els.audioPlayer.src = URL.createObjectURL(file);
-    els.playerSection.style.display = 'block';
-    els.statusTranscribe.textContent = "File ready.";
-  };
-
-  els.btnTranscribe.onclick = async () => {
-    if (!currentAudioBlob) return alert("No audio found!");
-    
-    els.btnTranscribe.disabled = true;
-    els.statusTranscribe.textContent = "⏳ Loading AI Model (~50MB)...";
-    
+// ✅ Rekam Audio (menggunakan MediaRecorder native)
+btnRecord.addEventListener('click', async () => {
     try {
-      if (!window.transformers) throw new Error("Library not loaded.");
-      
-      const { pipeline } = window.transformers;
-      const transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny');
-      
-      els.statusTranscribe.textContent = "🔄 Transcribing...";
-      const output = await transcriber(currentAudioBlob, { chunk_length_s: 30.0 });
-      
-      els.transcriptOut.textContent = output.text || "(No speech detected)";
-      els.statusTranscribe.textContent = "✅ Done!";
-      
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = e => {
+            if (e.data.size > 0) audioChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = () => {
+            recordedBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const url = URL.createObjectURL(recordedBlob);
+            audioPreview.src = url;
+            audioPreview.style.display = 'block';
+            btnTranscribe.disabled = false;
+            infoEl.textContent = `Terekam: ${formatTime(seconds)} | Siap ditranskrip`;
+            
+            // Hentikan semua track mic
+            stream.getTracks().forEach(t => t.stop());
+        };
+
+        mediaRecorder.start();
+        startTimer();
+        
+        btnRecord.disabled = true;
+        btnStop.disabled = false;
+        btnTranscribe.disabled = true;
+        resultBox.style.display = 'none';
+        infoEl.textContent = '🔴 Sedang merekam...';
     } catch (err) {
-      console.error(err);
-      els.transcriptOut.textContent = `❌ ERROR: ${err.message}`;
-      els.statusTranscribe.textContent = "Failed. Try shorter audio (<30s).";
-    } finally {
-      els.btnTranscribe.disabled = false;
+        alert('Gagal mengakses mikrofon. Pastikan izin diberikan.');
+        console.error(err);
     }
-  };
+});
+
+btnStop.addEventListener('click', () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        stopTimer();
+        btnRecord.disabled = false;
+        btnStop.disabled = true;
+    }
+});
+
+// ✅ Transkripsi dengan error handling yang benar
+btnTranscribe.addEventListener('click', async () => {
+    if (!transcriber) {
+        alert('Mesin AI belum siap. Mohon tunggu.');
+        return;
+    }
+    if (!recordedBlob) {
+        alert('Belum ada audio yang direkam.');
+        return;
+    }
+
+    btnTranscribe.disabled = true;
+    btnTranscribe.textContent = '⏳ Sedang mentranskrip...';
+    resultBox.style.display = 'none';
+
+    try {
+        // Konversi blob ke Float32Array untuk Whisper
+        const arrayBuffer = await recordedBlob.arrayBuffer();
+        const audioContext = new AudioContext({ sampleRate: 16000 });
+        const decoded = await audioContext.decodeAudioData(arrayBuffer);
+        
+        // Ambil channel pertama (mono)
+        const audioData = decoded.getChannelData(0);
+        
+        const output = await transcriber(audioData, { 
+            language: 'indonesian', // Default ID, bisa diubah
+            task: 'transcribe' 
+        });
+
+        const text = output[0]?.text || '(Tidak ada teks terdeteksi)';
+        transcriptText.textContent = text;
+        resultBox.style.display = 'block';
+        infoEl.textContent = '✅ Transkripsi selesai!';
+    } catch (err) {
+        console.error('Transcribe error:', err);
+        transcriptText.textContent = `❌ Error: ${err.message}`;
+        resultBox.style.display = 'block';
+        infoEl.textContent = 'Gagal mentranskrip. Coba rekam ulang.';
+    } finally {
+        btnTranscribe.disabled = false;
+        btnTranscribe.textContent = '✨ Transkrip ke Teks (ID/EN/ZH)';
+    }
+});
+
+// Salin teks
+btnCopy.addEventListener('click', () => {
+    navigator.clipboard.writeText(transcriptText.textContent)
+        .then(() => {
+            const original = btnCopy.textContent;
+            btnCopy.textContent = '✅ Tersalin!';
+            setTimeout(() => btnCopy.textContent = original, 1500);
+        });
 });
