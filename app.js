@@ -106,53 +106,58 @@ class MeetingRecorder {
 
 // --- UTILS: Convert ANY audio to WAV (Required for Whisper in Browser) ---
 async function convertBlobToWav(blob) {
-  const arrayBuffer = await blob.arrayBuffer();
-  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-  
-  // Create WAV file from AudioBuffer
-  const numOfChan = audioBuffer.numberOfChannels;
-  const length = audioBuffer.length * numOfChan * 2 + 44;
-  const buffer = new ArrayBuffer(length);
-  const view = new DataView(buffer);
-  const channels = [];
-  let i, sample;
-  let offset = 0;
-  let pos = 0;
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    
+    // Create WAV file from AudioBuffer
+    const numOfChan = audioBuffer.numberOfChannels;
+    const length = audioBuffer.length * numOfChan * 2 + 44;
+    const buffer = new ArrayBuffer(length);
+    const view = new DataView(buffer);
+    const channels = [];
+    let i, sample;
+    let offset = 0;
+    let pos = 0;
 
-  // Write WAV Header
-  setUint32(0x46464952); // "RIFF"
-  setUint32(length - 8); // file length - 8
-  setUint32(0x45564157); // "WAVE"
-  setUint32(0x20746d66); // "fmt " chunk
-  setUint32(16); // length = 16
-  setUint16(1); // PCM (uncompressed)
-  setUint16(numOfChan);
-  setUint32(audioBuffer.sampleRate);
-  setUint32(audioBuffer.sampleRate * 2 * numOfChan); // avg. bytes/sec
-  setUint16(numOfChan * 2); // block-align
-  setUint16(16); // 16-bit (hardcoded in this converter)
-  setUint32(0x61746164); // "data" - chunk
-  setUint32(length - pos - 4); // chunk length
+    // Write WAV Header
+    setUint32(0x46464952); // "RIFF"
+    setUint32(length - 8); // file length - 8
+    setUint32(0x45564157); // "WAVE"
+    setUint32(0x20746d66); // "fmt " chunk
+    setUint32(16); // length = 16
+    setUint16(1); // PCM (uncompressed)
+    setUint16(numOfChan);
+    setUint32(audioBuffer.sampleRate);
+    setUint32(audioBuffer.sampleRate * 2 * numOfChan); // avg. bytes/sec
+    setUint16(numOfChan * 2); // block-align
+    setUint16(16); // 16-bit (hardcoded in this converter)
+    setUint32(0x61746164); // "data" - chunk
+    setUint32(length - pos - 4); // chunk length
 
-  // Write Interleaved Data
-  for(i = 0; i < audioBuffer.numberOfChannels; i++)
-    channels.push(audioBuffer.getChannelData(i));
+    // Write Interleaved Data
+    for(i = 0; i < audioBuffer.numberOfChannels; i++)
+      channels.push(audioBuffer.getChannelData(i));
 
-  while(pos < audioBuffer.length) {
-    for(i = 0; i < numOfChan; i++) {
-      sample = Math.max(-1, Math.min(1, channels[i][pos])); // clamp
-      sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767)|0; // scale to 16-bit signed int
-      view.setInt16(44 + offset, sample, true); // write 16-bit sample
-      offset += 2;
+    while(pos < audioBuffer.length) {
+      for(i = 0; i < numOfChan; i++) {
+        sample = Math.max(-1, Math.min(1, channels[i][pos])); // clamp
+        sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767)|0; // scale to 16-bit signed int
+        view.setInt16(44 + offset, sample, true); // write 16-bit sample
+        offset += 2;
+      }
+      pos++;
     }
-    pos++;
+
+    return new Blob([buffer], { type: "audio/wav" });
+
+    function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
+    function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
+  } catch (err) {
+    console.error("WAV conversion failed:", err);
+    throw new Error(`Audio format not supported: ${err.message}`);
   }
-
-  return new Blob([buffer], { type: "audio/wav" });
-
-  function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
-  function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
 }
 
 // --- MAIN APP LOGIC ---
@@ -182,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const s = Math.floor((ms % 60000) / 1000).toString().padStart(2, '0');
       els.timer.textContent = `${m}:${s}`;
     },
-    onError: (e) => els.statusRec.textContent = ` ${e.message}`
+    onError: (e) => els.statusRec.textContent = `❌ ${e.message}`
   });
 
   // 1. RECORDING FLOW
@@ -191,7 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
     els.btnRec.disabled = true; els.btnPause.disabled = false; els.btnStop.disabled = false;
     els.btnResume.style.display = 'none';
     els.playerSection.style.display = 'none'; // Hide player while recording
-    els.statusRec.textContent = ' Recording...';
+    els.statusRec.textContent = '🔴 Recording...';
   };
 
   els.btnPause.onclick = () => {
@@ -203,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
   els.btnResume.onclick = async () => {
     await recorder.resume();
     els.btnResume.style.display = 'none'; els.btnPause.style.display = 'inline-block';
-    els.statusRec.textContent = ' Recording...';
+    els.statusRec.textContent = '🔴 Recording...';
   };
 
   els.btnStop.onclick = async () => {
