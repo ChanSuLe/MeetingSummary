@@ -1374,7 +1374,7 @@ async function loadModel() {
             "wasm",
 
           dtype:
-            "q8",
+            "fp32",
 
           progress_callback:
             (data) => {
