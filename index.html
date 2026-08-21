@@ -3,48 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MeetingSummary</title>
+    
+    <!-- ⚠️ WAJIB: Header ini mengaktifkan SharedArrayBuffer di GitHub Pages -->
+    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
+    <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
+    
+    <title>Transkripsi Audio Harian</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>🎙️ MeetingSummary</h1>
-            <p>AI Assistant (Zero-Cost & Private)</p>
-        </header>
+        <h1>🎙️ Transkripsi Cepat</h1>
+        
+        <!-- Status Loading Model -->
+        <div id="model-status" class="status-box loading">
+            ⏳ Memuat mesin AI... (mohon tunggu 30-60 detik pertama kali)
+        </div>
 
-        <section class="card">
-            <h2>Live Recording</h2>
-            <div id="timer-display" class="timer">00:00</div>
-            <div class="controls">
-                <button id="btn-record" class="btn primary">🔴 Record</button>
-                <button id="btn-pause" class="btn secondary" disabled>⏸ Pause</button>
-                <button id="btn-resume" class="btn secondary" style="display:none;">▶ Resume</button>
-                <button id="btn-stop" class="btn danger" disabled>⏹ Stop</button>
-            </div>
-            <div id="record-status" class="status-text"></div>
-        </section>
+        <!-- Kontrol Rekaman -->
+        <div class="recorder-controls">
+            <button id="btn-record" disabled> Rekam</button>
+            <button id="btn-stop" disabled> Stop</button>
+        </div>
 
-        <section class="card" id="player-section" style="display:none;">
-            <h2>Audio Preview</h2>
-            <audio id="audio-player" controls style="width: 100%; margin-bottom: 15px;"></audio>
-            <button id="btn-transcribe" class="btn primary full-width">✨ Transcribe to Text (ID/EN/ZH)</button>
-            <div id="transcribe-status" class="status-text" style="margin-top:10px;"></div>
-        </section>
+        <div id="timer">00:00</div>
+        <p id="record-info">Tekan Rekam untuk mulai</p>
 
-        <section class="card">
-            <h2>Or Upload File</h2>
-            <label for="audio-upload" class="upload-btn">📂 Choose Audio File</label>
-            <input type="file" id="audio-upload" accept="audio/*" style="display: none;">
-        </section>
+        <!-- Preview Audio -->
+        <audio id="audio-preview" controls style="display:none; width:100%; margin-top:15px;"></audio>
 
-        <section class="card result-area">
-            <h2>Transcription Result</h2>
-            <div id="transcript-output" class="transcript-box">Waiting for audio...</div>
-        </section>
+        <!-- Tombol Transkripsi -->
+        <button id="btn-transcribe" disabled style="margin-top:20px;">
+            ✨ Transkrip ke Teks (ID/EN/ZH)
+        </button>
+
+        <!-- Hasil -->
+        <div id="result-box" class="result-box" style="display:none;">
+            <h3>Hasil Transkripsi:</h3>
+            <p id="transcript-text"></p>
+            <button id="btn-copy" style="margin-top:10px; font-size:14px;">📋 Salin Teks</button>
+        </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js"></script>
-    <script src="app.js"></script>
+    <!-- Gunakan Xenova Transformers via CDN (lebih stabil di GH Pages) -->
+    <script type="module" src="app.js"></script>
 </body>
 </html>
