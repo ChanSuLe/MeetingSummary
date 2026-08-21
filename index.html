@@ -3,27 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MeetingSummary</title>
+    <title>MeetingSummary - AI Assistant</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="recorder-container">
-        <!-- Timer Display -->
-        <div id="timer-display" class="timer">00:00</div>
-        
-        <!-- Controls -->
-        <div class="controls">
-            <button id="btn-record">🔴 Record</button>
-            <button id="btn-pause" disabled> Pause</button>
-            <button id="btn-resume" disabled style="display:none;">▶ Resume</button>
-            <button id="btn-stop" disabled>⏹ Stop</button>
-        </div>
-        
-        <!-- Status / Debug Info (Opsional untuk testing) -->
-        <div id="status-log" class="log"></div>
+    <div class="container">
+        <header>
+            <h1>🎙️ MeetingSummary</h1>
+            <p>AI Meeting Assistant (Browser-Based)</p>
+        </header>
+
+        <!-- Section Recording -->
+        <section class="card">
+            <h2>Live Recording</h2>
+            <div id="timer-display" class="timer">00:00</div>
+            
+            <div class="controls">
+                <button id="btn-record" class="btn primary">🔴 Record</button>
+                <button id="btn-pause" class="btn secondary" disabled>⏸ Pause</button>
+                <button id="btn-resume" class="btn secondary" style="display:none;">▶ Resume</button>
+                <button id="btn-stop" class="btn danger" disabled>⏹ Stop</button>
+            </div>
+            <div id="record-status" class="status-text"></div>
+        </section>
+
+        <!-- Section Upload -->
+        <section class="card">
+            <h2>Upload Audio</h2>
+            <p class="hint">Support: .mp3, .m4a, .wav, .webm (Max 50MB)</p>
+            <label for="audio-upload" class="upload-btn">📂 Choose File</label>
+            <input type="file" id="audio-upload" accept="audio/*,video/mp4" style="display: none;">
+            <div id="upload-status" class="status-text"></div>
+        </section>
+
+        <!-- Area Hasil (Placeholder untuk Tahap Selanjutnya) -->
+        <section class="card result-area">
+            <h2>Transcription Result</h2>
+            <div id="transcript-output">Waiting for audio input...</div>
+        </section>
     </div>
 
-    <!-- PENTING: Gunakan type="module" -->
-    <script type="module" src="app.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
