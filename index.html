@@ -27,22 +27,30 @@
             <div id="record-status" class="status-text"></div>
         </section>
 
-        <!-- Section Upload -->
+        <!-- Section Upload & Playback -->
         <section class="card">
-            <h2>Upload Audio</h2>
-            <p class="hint">Support: .mp3, .m4a, .wav, .webm (Max 50MB)</p>
-            <label for="audio-upload" class="upload-btn">📂 Choose File</label>
+            <h2>Audio Source</h2>
+            <label for="audio-upload" class="upload-btn">📂 Upload Recording</label>
             <input type="file" id="audio-upload" accept="audio/*,video/mp4" style="display: none;">
+            
+            <!-- Audio Player -->
+            <div id="player-container" style="display:none; margin-top: 15px;">
+                <audio id="audio-player" controls style="width: 100%;"></audio>
+                <button id="btn-transcribe" class="btn primary" style="margin-top: 10px; width: 100%;">✨ Transcribe to Text</button>
+            </div>
+            
             <div id="upload-status" class="status-text"></div>
         </section>
 
-        <!-- Area Hasil (Placeholder untuk Tahap Selanjutnya) -->
+        <!-- Section Result -->
         <section class="card result-area">
-            <h2>Transcription Result</h2>
-            <div id="transcript-output">Waiting for audio input...</div>
+            <h2>Transcription Result (ID/EN/ZH)</h2>
+            <div id="transcript-output" class="transcript-box">Waiting for audio...</div>
         </section>
     </div>
 
+    <!-- Load Whisper WASM Library via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@xenova/transformers@3.0.0/dist/transformers.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
