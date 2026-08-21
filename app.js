@@ -10,11 +10,8 @@ import {
    CONFIGURATION
 ========================================================= */
 
-const MODEL_ID = "Xenova/whisper-tiny";
+const MODEL_ID = "Xenova/whisper-base";
 
-
-// We want remote models from Hugging Face.
-// No local model files are required in the repository.
 env.allowLocalModels = false;
 env.allowRemoteModels = true;
 
@@ -122,15 +119,20 @@ const els = {
 
 const state = {
 
-  stream: null,
+  stream:
+    null,
 
-  recorder: null,
+  recorder:
+    null,
 
-  chunks: [],
+  chunks:
+    [],
 
-  audioBlob: null,
+  audioBlob:
+    null,
 
-  audioUrl: null,
+  audioUrl:
+    null,
 
   recorderState:
     "inactive",
@@ -247,10 +249,8 @@ function getElapsedMs() {
 
   return (
     state.accumulatedMs +
-    (
-      performance.now() -
-      state.timerStartedAt
-    )
+    performance.now() -
+    state.timerStartedAt
   );
 
 }
@@ -318,10 +318,10 @@ function pauseTimer() {
       state.timerInterval
     );
 
-    state.timerInterval =
-      null;
-
   }
+
+  state.timerInterval =
+    null;
 
   updateTimer();
 
@@ -370,10 +370,10 @@ function revokeAudioUrl() {
       state.audioUrl
     );
 
-    state.audioUrl =
-      null;
-
   }
+
+  state.audioUrl =
+    null;
 
 }
 
@@ -415,9 +415,9 @@ function chooseMimeType() {
 
   const types = [
 
-    "audio/mp4",
-
     "audio/mp4;codecs=mp4a.40.2",
+
+    "audio/mp4",
 
     "audio/webm;codecs=opus",
 
@@ -469,6 +469,7 @@ async function startRecording() {
       await navigator.mediaDevices.getUserMedia(
         {
           audio: {
+
             echoCancellation:
               true,
 
@@ -483,7 +484,9 @@ async function startRecording() {
 
             sampleRate:
               48000
+
           }
+
         }
       );
 
@@ -934,17 +937,13 @@ async function decodeAudioFile(
   blob
 ) {
 
-  const arrayBuffer =
-    await blob.arrayBuffer();
-
-
-  const AudioContext =
+  const AudioContextClass =
     window.AudioContext ||
     window.webkitAudioContext;
 
 
   if (
-    !AudioContext
+    !AudioContextClass
   ) {
 
     throw new Error(
@@ -955,18 +954,14 @@ async function decodeAudioFile(
 
 
   const context =
-    new AudioContext();
+    new AudioContextClass();
 
 
   try {
 
-    const audioBuffer =
-      await context.decodeAudioData(
-        arrayBuffer
-      );
-
-
-    return audioBuffer;
+    return await context.decodeAudioData(
+      await blob.arrayBuffer()
+    );
 
   }
 
@@ -982,10 +977,6 @@ async function decodeAudioFile(
 function audioBufferToMonoFloat32(
   audioBuffer
 ) {
-
-  const length =
-    audioBuffer.length;
-
 
   if (
     audioBuffer.numberOfChannels ===
@@ -1003,14 +994,17 @@ function audioBufferToMonoFloat32(
 
   const mono =
     new Float32Array(
-      length
+      audioBuffer.length
     );
+
+
+  const divisor =
+    audioBuffer.numberOfChannels;
 
 
   for (
     let channel = 0;
-    channel <
-    audioBuffer.numberOfChannels;
+    channel < divisor;
     channel++
   ) {
 
@@ -1022,13 +1016,13 @@ function audioBufferToMonoFloat32(
 
     for (
       let i = 0;
-      i < length;
+      i < audioBuffer.length;
       i++
     ) {
 
       mono[i] +=
         data[i] /
-        audioBuffer.numberOfChannels;
+        divisor;
 
     }
 
@@ -1065,9 +1059,12 @@ function resampleTo16k(
 
 
   const outputLength =
-    Math.floor(
-      input.length *
-      ratio
+    Math.max(
+      1,
+      Math.floor(
+        input.length *
+        ratio
+      )
     );
 
 
@@ -1084,8 +1081,7 @@ function resampleTo16k(
   ) {
 
     const position =
-      i /
-      ratio;
+      i / ratio;
 
 
     const left =
@@ -1102,8 +1098,7 @@ function resampleTo16k(
 
 
     const fraction =
-      position -
-      left;
+      position - left;
 
 
     output[i] =
@@ -1121,7 +1116,7 @@ function resampleTo16k(
 
 
 /* =========================================================
-   WHISPER MODEL
+   PROGRESS
 ========================================================= */
 
 function updateProgress(
@@ -1132,6 +1127,7 @@ function updateProgress(
   els.progressBox.hidden =
     false;
 
+
   els.progressBar.style.width =
     `${Math.max(
       0,
@@ -1141,6 +1137,7 @@ function updateProgress(
       )
     )}%`;
 
+
   els.progressText.textContent =
     text;
 
@@ -1148,21 +1145,14 @@ function updateProgress(
 
 
 /* =========================================================
-   LOAD WHISPER MODEL
+   WHISPER BASE
+   WASM ONLY
 ========================================================= */
 
 async function loadModel() {
 
   if (
-    state.modelReady
-  ) {
-
-    return;
-
-  }
-
-
-  if (
+    state.modelReady ||
     state.modelLoading
   ) {
 
@@ -1175,14 +1165,6 @@ async function loadModel() {
     true;
 
 
-  state.modelReady =
-    false;
-
-
-  state.transcriber =
-    null;
-
-
   els.loadModelBtn.disabled =
     true;
 
@@ -1193,50 +1175,16 @@ async function loadModel() {
 
 
   els.modelStatus.textContent =
-    "Preparing local Whisper (WASM).";
+    "Loading Whisper Base multilingual on CPU/WASM.";
 
 
   updateProgress(
-    5,
-    "Starting AI model..."
+    2,
+    "Starting Whisper Base..."
   );
 
 
   try {
-
-    /*
-      IMPORTANT
-
-      WebGPU is intentionally NOT used here.
-
-      The previous version automatically selected
-      WebGPU whenever navigator.gpu existed.
-
-      On iPhone/Safari this caused:
-
-      "no available backend found"
-
-      and:
-
-      "webgpuInit is not a function"
-
-      WASM is used instead because it is the
-      compatibility backend for this version.
-    */
-
-    const device =
-      "wasm";
-
-
-    els.modelStatus.textContent =
-      "Preparing local Whisper (WASM).";
-
-
-    updateProgress(
-      10,
-      "Loading Whisper Tiny..."
-    );
-
 
     state.transcriber =
       await pipeline(
@@ -1244,8 +1192,19 @@ async function loadModel() {
         MODEL_ID,
         {
 
+          /*
+           * WASM is deliberately used.
+           * WebGPU previously caused an error.
+           */
+
           device:
-            device,
+            "wasm",
+
+          /*
+           * FP32 is deliberately used.
+           * This avoids the q8 MatMulNBits decoder
+           * compatibility problem encountered earlier.
+           */
 
           dtype:
             "fp32",
@@ -1260,7 +1219,7 @@ async function loadModel() {
 
                 updateProgress(
                   data.progress,
-                  `Downloading model: ${Math.round(
+                  `Downloading AI model: ${Math.round(
                     data.progress
                   )}%`
                 );
@@ -1270,18 +1229,8 @@ async function loadModel() {
             }
 
         }
+
       );
-
-
-    if (
-      !state.transcriber
-    ) {
-
-      throw new Error(
-        "Whisper pipeline was not created."
-      );
-
-    }
 
 
     state.modelReady =
@@ -1301,7 +1250,7 @@ async function loadModel() {
 
 
     els.modelStatus.textContent =
-      "Whisper Tiny ready • WASM";
+      "Whisper Base ready • WASM";
 
 
     els.transcribeBtn.disabled =
@@ -1324,7 +1273,7 @@ async function loadModel() {
   catch (error) {
 
     console.error(
-      "Whisper model error:",
+      "Whisper Base model error:",
       error
     );
 
@@ -1337,20 +1286,12 @@ async function loadModel() {
       false;
 
 
-    state.transcriber =
-      null;
-
-
     els.loadModelBtn.disabled =
       false;
 
 
-    els.loadModelBtn.textContent =
-      "Load AI Model";
-
-
     els.modelStatus.textContent =
-      "Unable to load the local AI model.";
+      "Unable to load Whisper Base.";
 
 
     setStatus(
@@ -1368,9 +1309,9 @@ async function loadModel() {
 
 
     alert(
-      `The local Whisper model could not be loaded.\n\n${
+      `Whisper Base could not be loaded.\n\n${
         error?.message ||
-        "Unknown error"
+        "Unknown model error"
       }`
     );
 
@@ -1380,7 +1321,7 @@ async function loadModel() {
 
 
 /* =========================================================
-   LANGUAGE SETTINGS
+   LANGUAGE
 ========================================================= */
 
 function whisperLanguage(
@@ -1418,13 +1359,189 @@ function whisperLanguage(
 
 
   /*
-    Auto and Mixed intentionally return
-    undefined so Whisper can process
-    multilingual audio without forcing
-    one language.
-  */
+   * Auto / Mixed:
+   * Do NOT force a language.
+   * Whisper will handle multilingual input.
+   */
 
   return undefined;
+
+}
+
+
+/* =========================================================
+   SIMPLE LANGUAGE DISPLAY
+========================================================= */
+
+function detectLanguageFromText(
+  text
+) {
+
+  const chinese =
+    (
+      text.match(
+        /[\u3400-\u9fff]/g
+      ) || []
+    ).length;
+
+
+  const words =
+    (
+      text.match(
+        /[A-Za-zÀ-ÿ]+/g
+      ) || []
+    )
+      .map(
+        (x) =>
+          x.toLowerCase()
+      );
+
+
+  const englishWords =
+    new Set([
+
+      "the",
+      "and",
+      "is",
+      "are",
+      "was",
+      "were",
+      "will",
+      "would",
+      "should",
+      "meeting",
+      "project",
+      "planning",
+      "next",
+      "month",
+      "please",
+      "thank",
+      "everyone"
+
+    ]);
+
+
+  const indonesianWords =
+    new Set([
+
+      "yang",
+      "dan",
+      "untuk",
+      "dengan",
+      "akan",
+      "sudah",
+      "adalah",
+      "kita",
+      "saya",
+      "mereka",
+      "bulan",
+      "proyek",
+      "meeting",
+      "tolong",
+      "terima"
+
+    ]);
+
+
+  let englishScore =
+    0;
+
+
+  let indonesianScore =
+    0;
+
+
+  words.forEach(
+    (word) => {
+
+      if (
+        englishWords.has(
+          word
+        )
+      ) {
+
+        englishScore++;
+
+      }
+
+
+      if (
+        indonesianWords.has(
+          word
+        )
+      ) {
+
+        indonesianScore++;
+
+      }
+
+    }
+  );
+
+
+  if (
+    chinese >= 3 &&
+    englishScore > 0 &&
+    indonesianScore > 0
+  ) {
+
+    return "Mixed • Indonesian + English + Mandarin";
+
+  }
+
+
+  if (
+    chinese >= 3 &&
+    englishScore > 0
+  ) {
+
+    return "Mixed • English + Mandarin";
+
+  }
+
+
+  if (
+    chinese >= 3 &&
+    indonesianScore > 0
+  ) {
+
+    return "Mixed • Indonesian + Mandarin";
+
+  }
+
+
+  if (
+    chinese >= 3
+  ) {
+
+    return "Mandarin likely";
+
+  }
+
+
+  if (
+    englishScore >
+    indonesianScore &&
+    englishScore > 0
+  ) {
+
+    return "English likely";
+
+  }
+
+
+  if (
+    indonesianScore >
+    englishScore &&
+    indonesianScore > 0
+  ) {
+
+    return "Indonesian likely";
+
+  }
+
+
+  return "Auto • multilingual";
 
 }
 
@@ -1441,7 +1558,7 @@ async function transcribeAudio() {
   ) {
 
     alert(
-      "Load the AI model first."
+      "The AI model is not ready yet."
     );
 
     return;
@@ -1487,7 +1604,7 @@ async function transcribeAudio() {
 
     updateProgress(
       10,
-      "Converting audio..."
+      "Converting audio to mono 16 kHz..."
     );
 
 
@@ -1506,7 +1623,7 @@ async function transcribeAudio() {
 
     updateProgress(
       20,
-      "Running Whisper locally..."
+      "Whisper Base is transcribing locally..."
     );
 
 
@@ -1517,6 +1634,9 @@ async function transcribeAudio() {
 
 
     const options = {
+
+      task:
+        "transcribe",
 
       chunk_length_s:
         30,
@@ -1575,9 +1695,12 @@ async function transcribeAudio() {
       text;
 
 
-    detectLanguageFromResult(
-      result
-    );
+    els.detectedLanguage.textContent =
+      `Language: ${
+        detectLanguageFromText(
+          text
+        )
+      }`;
 
 
     updateProgress(
@@ -1627,71 +1750,10 @@ async function transcribeAudio() {
   finally {
 
     els.transcribeBtn.disabled =
-      !(
-        state.modelReady &&
-        state.audioBlob
-      );
+      !state.audioBlob ||
+      !state.modelReady;
 
   }
-
-}
-
-
-/* =========================================================
-   LANGUAGE DISPLAY
-========================================================= */
-
-function detectLanguageFromResult(
-  result
-) {
-
-  let language =
-    "Auto / multilingual";
-
-
-  if (
-    els.languageSelect.value ===
-    "id"
-  ) {
-
-    language =
-      "Indonesian";
-
-  }
-
-  else if (
-    els.languageSelect.value ===
-    "en"
-  ) {
-
-    language =
-      "English";
-
-  }
-
-  else if (
-    els.languageSelect.value ===
-    "zh"
-  ) {
-
-    language =
-      "Mandarin";
-
-  }
-
-  else if (
-    els.languageSelect.value ===
-    "mixed"
-  ) {
-
-    language =
-      "Mixed ID + EN + ZH";
-
-  }
-
-
-  els.detectedLanguage.textContent =
-    `Language: ${language}`;
 
 }
 
@@ -1713,8 +1775,8 @@ function splitSentences(
       /(?<=[.!?。！？])\s+/
     )
     .map(
-      (item) =>
-        item.trim()
+      (x) =>
+        x.trim()
     )
     .filter(
       Boolean
@@ -1773,12 +1835,15 @@ function renderList(
         "li"
       );
 
+
     li.textContent =
       empty;
+
 
     element.appendChild(
       li
     );
+
 
     return;
 
@@ -1793,8 +1858,10 @@ function renderList(
           "li"
         );
 
+
       li.textContent =
         item;
+
 
       element.appendChild(
         li
@@ -1836,18 +1903,31 @@ function generateSummary() {
       extractKeywords(
         sentences,
         [
+
           /\bdecid(ed|e|es|ing)?\b/i,
+
           /\bdecision\b/i,
+
           /\bagree(d|ment)?\b/i,
+
           /\bapproved?\b/i,
+
           /\bconfirmed?\b/i,
+
           /\bkeputusan\b/i,
+
           /\bsepakat\b/i,
+
           /\bdisetujui\b/i,
+
           /\bditetapkan\b/i,
+
           /决定/,
+
           /同意/,
+
           /确认/
+
         ]
       )
     ).slice(
@@ -1861,19 +1941,33 @@ function generateSummary() {
       extractKeywords(
         sentences,
         [
+
           /\baction\b/i,
+
           /\baction item\b/i,
+
           /\bnext step\b/i,
+
           /\bfollow[- ]?up\b/i,
+
           /\bwill\b/i,
+
           /\bneed to\b/i,
+
           /\bmust\b/i,
+
           /\bakan\b/i,
+
           /\bharus\b/i,
+
           /\bperlu\b/i,
+
           /\btindak lanjut\b/i,
+
           /需要/,
+
           /必须/
+
         ]
       )
     ).slice(
@@ -1916,7 +2010,7 @@ function generateSummary() {
 
 
 /* =========================================================
-   SAVE / EXPORT
+   SAVE
 ========================================================= */
 
 function saveDraft() {
@@ -1927,8 +2021,7 @@ function saveDraft() {
       els.transcript.value,
 
     summary:
-      els.summaryOverview
-        .textContent,
+      els.summaryOverview.textContent,
 
     decisions:
       [
@@ -1974,31 +2067,11 @@ function saveDraft() {
 }
 
 
+/* =========================================================
+   EXPORT
+========================================================= */
+
 function exportTxt() {
-
-  const decisionItems =
-    [
-      ...els.decisionsList
-        .querySelectorAll(
-          "li"
-        )
-    ].map(
-      (li) =>
-        `- ${li.textContent}`
-    );
-
-
-  const actionItems =
-    [
-      ...els.actionsList
-        .querySelectorAll(
-          "li"
-        )
-    ].map(
-      (li) =>
-        `- ${li.textContent}`
-    );
-
 
   const content = [
 
@@ -2008,20 +2081,35 @@ function exportTxt() {
 
     "EXECUTIVE SUMMARY",
 
-    els.summaryOverview
-      .textContent,
+    els.summaryOverview.textContent,
 
     "",
 
     "KEY DECISIONS",
 
-    ...decisionItems,
+    ...[
+      ...els.decisionsList
+        .querySelectorAll(
+          "li"
+        )
+    ].map(
+      (li) =>
+        `- ${li.textContent}`
+    ),
 
     "",
 
     "ACTION ITEMS",
 
-    ...actionItems,
+    ...[
+      ...els.actionsList
+        .querySelectorAll(
+          "li"
+        )
+    ].map(
+      (li) =>
+        `- ${li.textContent}`
+    ),
 
     "",
 
@@ -2092,6 +2180,10 @@ function exportTxt() {
 
 }
 
+
+/* =========================================================
+   CLEAR
+========================================================= */
 
 function clearTranscript() {
 
@@ -2167,6 +2259,10 @@ function clearAll() {
 
 
   resetTimer();
+
+
+  els.transcribeBtn.disabled =
+    true;
 
 
   setStatus(
@@ -2262,4 +2358,25 @@ els.timer.textContent =
 
 setStatus(
   "Ready"
+);
+
+
+/* =========================================================
+   AUTOMATIC MODEL LOADING
+========================================================= */
+
+window.addEventListener(
+  "load",
+  () => {
+
+    setTimeout(
+      () => {
+
+        loadModel();
+
+      },
+      250
+    );
+
+  }
 );
