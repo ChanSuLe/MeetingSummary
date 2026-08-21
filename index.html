@@ -2,22 +2,21 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MeetingSummary - AI Assistant</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MeetingSummary</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <header>
             <h1>🎙️ MeetingSummary</h1>
-            <p>AI Meeting Assistant (Browser-Based)</p>
+            <p>AI Assistant (Zero-Cost & Private)</p>
         </header>
 
-        <!-- Section Recording -->
+        <!-- 1. RECORDER -->
         <section class="card">
             <h2>Live Recording</h2>
             <div id="timer-display" class="timer">00:00</div>
-            
             <div class="controls">
                 <button id="btn-record" class="btn primary">🔴 Record</button>
                 <button id="btn-pause" class="btn secondary" disabled>⏸ Pause</button>
@@ -27,29 +26,29 @@
             <div id="record-status" class="status-text"></div>
         </section>
 
-        <!-- Section Upload & Playback -->
-        <section class="card">
-            <h2>Audio Source</h2>
-            <label for="audio-upload" class="upload-btn">📂 Upload Recording</label>
-            <input type="file" id="audio-upload" accept="audio/*,video/mp4" style="display: none;">
-            
-            <!-- Audio Player -->
-            <div id="player-container" style="display:none; margin-top: 15px;">
-                <audio id="audio-player" controls style="width: 100%;"></audio>
-                <button id="btn-transcribe" class="btn primary" style="margin-top: 10px; width: 100%;">✨ Transcribe to Text</button>
-            </div>
-            
-            <div id="upload-status" class="status-text"></div>
+        <!-- 2. PLAYER & TRANSCRIBE BUTTON -->
+        <section class="card" id="player-section" style="display:none;">
+            <h2>Audio Preview</h2>
+            <audio id="audio-player" controls style="width: 100%; margin-bottom: 15px;"></audio>
+            <button id="btn-transcribe" class="btn primary full-width">✨ Transcribe to Text (ID/EN/ZH)</button>
+            <div id="transcribe-status" class="status-text" style="margin-top:10px;"></div>
         </section>
 
-        <!-- Section Result -->
+        <!-- 3. UPLOAD (Alternatif) -->
+        <section class="card">
+            <h2>Or Upload File</h2>
+            <label for="audio-upload" class="upload-btn">📂 Choose Audio File</label>
+            <input type="file" id="audio-upload" accept="audio/*" style="display: none;">
+        </section>
+
+        <!-- 4. RESULT -->
         <section class="card result-area">
-            <h2>Transcription Result (ID/EN/ZH)</h2>
+            <h2>Transcription Result</h2>
             <div id="transcript-output" class="transcript-box">Waiting for audio...</div>
         </section>
     </div>
 
-    <!-- Load Transformers.js v2.17.2 (Stable Version) -->
+    <!-- Load Transformers.js v2.17.2 -->
     <script src="https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js"></script>
     <script src="app.js"></script>
 </body>
