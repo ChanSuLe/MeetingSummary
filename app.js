@@ -1,7 +1,3 @@
-/**
- * Meeting Recorder & Transcriber (iOS Stable Version)
- * NO MANUAL WAV CONVERSION - Let library handle it
- */
 class MeetingRecorder {
   constructor(options = {}) {
     this.stream = null;
@@ -24,16 +20,13 @@ class MeetingRecorder {
     try {
       const AudioContext = window.AudioContext || window.webkitAudioContext;
       if (AudioContext) { const ctx = new AudioContext(); await ctx.resume(); }
-
       this.stream = await navigator.mediaDevices.getUserMedia({ 
         audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 44100, channelCount: 1 } 
       });
-      
       this.recorder = new MediaRecorder(this.stream, { mimeType: this.mimeType, audioBitsPerSecond: 128000 });
       this.chunks = [];
       this.recorder.ondataavailable = (e) => { if (e.data.size > 0) this.chunks.push(e.data); };
       this.recorder.start(1000);
-      
       this.startTime = performance.now();
       this.isRecording = true;
       this.isPaused = false;
@@ -55,15 +48,12 @@ class MeetingRecorder {
     try {
       const AudioContext = window.AudioContext || window.webkitAudioContext;
       if (AudioContext) { const ctx = new AudioContext(); await ctx.resume(); }
-      
       this.stream = await navigator.mediaDevices.getUserMedia({ 
         audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 44100, channelCount: 1 } 
       });
-      
       this.recorder = new MediaRecorder(this.stream, { mimeType: this.mimeType, audioBitsPerSecond: 128000 });
       this.recorder.ondataavailable = (e) => { if (e.data.size > 0) this.chunks.push(e.data); };
       this.recorder.start(1000);
-      
       this.startTime = performance.now();
       this.isPaused = false;
       this._startTimer();
@@ -75,10 +65,8 @@ class MeetingRecorder {
     this.recorder.stop();
     this.stream.getTracks().forEach(t => t.stop());
     this._stopTimer();
-    
     const duration = this.isPaused ? this.elapsedBeforePause : this.elapsedBeforePause + (performance.now() - this.startTime);
     const blob = new Blob(this.chunks, { type: this.mimeType });
-    
     this._reset();
     return { blob, duration, type: this.mimeType };
   }
@@ -103,7 +91,6 @@ class MeetingRecorder {
   }
 }
 
-// --- MAIN APP LOGIC (NO WAV CONVERSION) ---
 document.addEventListener('DOMContentLoaded', () => {
   const els = {
     timer: document.getElementById('timer-display'),
@@ -112,17 +99,15 @@ document.addEventListener('DOMContentLoaded', () => {
     btnResume: document.getElementById('btn-resume'),
     btnStop: document.getElementById('btn-stop'),
     statusRec: document.getElementById('record-status'),
-    
     playerSection: document.getElementById('player-section'),
     audioPlayer: document.getElementById('audio-player'),
     btnTranscribe: document.getElementById('btn-transcribe'),
     statusTranscribe: document.getElementById('transcribe-status'),
-    
     uploadInput: document.getElementById('audio-upload'),
     transcriptOut: document.getElementById('transcript-output')
   };
 
-  let currentAudioBlob = null; // Store original blob (m4a/webm)
+  let currentAudioBlob = null;
 
   const recorder = new MeetingRecorder({
     onTimerUpdate: (ms) => {
@@ -130,10 +115,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const s = Math.floor((ms % 60000) / 1000).toString().padStart(2, '0');
       els.timer.textContent = `${m}:${s}`;
     },
-    onError: (e) => els.statusRec.textContent = ` ${e.message}`
+    onError: (e) => els.statusRec.textContent = `❌ ${e.message}`
   });
 
-  // 1. RECORDING FLOW
   els.btnRec.onclick = async () => {
     await recorder.start();
     els.btnRec.disabled = true; els.btnPause.disabled = false; els.btnStop.disabled = false;
@@ -158,12 +142,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const result = recorder.stop();
     if (result) {
       currentAudioBlob = result.blob;
-      
-      // Use ORIGINAL blob for playback (Safari supports .m4a natively)
       const url = URL.createObjectURL(result.blob);
       els.audioPlayer.src = url;
       els.playerSection.style.display = 'block';
-      
       els.statusRec.textContent = `✅ Saved: ${(result.duration/1000).toFixed(1)}s | Ready to play`;
       els.statusTranscribe.textContent = "Click Transcribe to start AI.";
       els.transcriptOut.textContent = "Waiting for transcription...";
@@ -172,7 +153,6 @@ document.addEventListener('DOMContentLoaded', () => {
     els.btnPause.style.display = 'inline-block'; els.btnResume.style.display = 'none';
   };
 
-  // 2. UPLOAD FLOW
   els.uploadInput.onchange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -182,7 +162,6 @@ document.addEventListener('DOMContentLoaded', () => {
     els.statusTranscribe.textContent = "File ready.";
   };
 
-  // 3. TRANSCRIPTION FLOW (Pass blob directly to Whisper)
   els.btnTranscribe.onclick = async () => {
     if (!currentAudioBlob) return alert("No audio found!");
     
@@ -193,23 +172,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!window.transformers) throw new Error("Library not loaded.");
       
       const { pipeline } = window.transformers;
-      // whisper-tiny handles m4a/webm internally via FFmpeg WASM
       const transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny');
       
       els.statusTranscribe.textContent = "🔄 Transcribing...";
-      
-      // Pass blob directly - library will decode internally
-      const output = await transcriber(currentAudioBlob, { 
-        chunk_length_s: 30.0,
-        language: undefined // Auto-detect ID/EN/ZH
-      });
+      const output = await transcriber(currentAudioBlob, { chunk_length_s: 30.0 });
       
       els.transcriptOut.textContent = output.text || "(No speech detected)";
       els.statusTranscribe.textContent = "✅ Done!";
       
     } catch (err) {
       console.error(err);
-      els.transcriptOut.textContent = ` ERROR: ${err.message}`;
+      els.transcriptOut.textContent = `❌ ERROR: ${err.message}`;
       els.statusTranscribe.textContent = "Failed. Try shorter audio (<30s).";
     } finally {
       els.btnTranscribe.disabled = false;
