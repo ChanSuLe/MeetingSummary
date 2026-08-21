@@ -1248,7 +1248,7 @@ async function loadModel() {
             device,
 
           dtype:
-            "q8",
+            "fp32",
 
           progress_callback:
             (data) => {
