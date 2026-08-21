@@ -174,7 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
     transcriptOut: document.getElementById('transcript-output')
   };
 
-  let currentBlob = null;
+  let currentWavBlob = null; // Store converted WAV blob here
 
   const recorder = new MeetingRecorder({
     onTimerUpdate: (ms) => {
@@ -182,7 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const s = Math.floor((ms % 60000) / 1000).toString().padStart(2, '0');
       els.timer.textContent = `${m}:${s}`;
     },
-    onError: (e) => els.statusRec.textContent = `❌ ${e.message}`
+    onError: (e) => els.statusRec.textContent = ` ${e.message}`
   });
 
   // 1. RECORDING FLOW
@@ -203,61 +203,68 @@ document.addEventListener('DOMContentLoaded', () => {
   els.btnResume.onclick = async () => {
     await recorder.resume();
     els.btnResume.style.display = 'none'; els.btnPause.style.display = 'inline-block';
-    els.statusRec.textContent = '🔴 Recording...';
+    els.statusRec.textContent = ' Recording...';
   };
 
   els.btnStop.onclick = async () => {
     const result = recorder.stop();
     if (result) {
-      currentBlob = result.blob;
+      els.statusRec.textContent = `✅ Converting audio format...`;
       
-      // Setup Player
-      const url = URL.createObjectURL(result.blob);
-      els.audioPlayer.src = url;
-      els.playerSection.style.display = 'block'; // SHOW PLAYER HERE
-      
-      els.statusRec.textContent = `✅ Saved: ${(result.duration/1000).toFixed(1)}s | ${(result.blob.size/1024).toFixed(1)}KB`;
-      els.statusTranscribe.textContent = "Ready to transcribe.";
-      els.transcriptOut.textContent = "Click button below to start AI...";
-      
-      // Auto download for testing
-      const a = document.createElement('a'); a.href = url; a.download = `meeting-${Date.now()}.m4a`; a.click();
+      try {
+        // CRITICAL: Convert .m4a/.webm to WAV immediately after stop
+        currentWavBlob = await convertBlobToWav(result.blob);
+        
+        // Setup Player with WAV blob (Guaranteed to work on iOS)
+        const url = URL.createObjectURL(currentWavBlob);
+        els.audioPlayer.src = url;
+        els.playerSection.style.display = 'block'; // SHOW PLAYER HERE
+        
+        els.statusRec.textContent = `✅ Saved: ${(result.duration/1000).toFixed(1)}s | Ready to play`;
+        els.statusTranscribe.textContent = "Audio converted. Click Transcribe.";
+        els.transcriptOut.textContent = "Click button below to start AI...";
+        
+      } catch (err) {
+        els.statusRec.textContent = `❌ Conversion failed: ${err.message}`;
+        console.error("Audio conversion error:", err);
+      }
     }
     els.btnRec.disabled = false; els.btnPause.disabled = true; els.btnStop.disabled = true;
     els.btnPause.style.display = 'inline-block'; els.btnResume.style.display = 'none';
   };
 
   // 2. UPLOAD FLOW
-  els.uploadInput.onchange = (e) => {
+  els.uploadInput.onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    currentBlob = file;
-    els.audioPlayer.src = URL.createObjectURL(file);
-    els.playerSection.style.display = 'block';
-    els.statusTranscribe.textContent = "File loaded.";
+    
+    els.statusTranscribe.textContent = "Converting uploaded file...";
+    try {
+      currentWavBlob = await convertBlobToWav(file);
+      els.audioPlayer.src = URL.createObjectURL(currentWavBlob);
+      els.playerSection.style.display = 'block';
+      els.statusTranscribe.textContent = "File ready.";
+    } catch (err) {
+      els.statusTranscribe.textContent = `❌ Upload conversion failed: ${err.message}`;
+    }
   };
 
-  // 3. TRANSCRIPTION FLOW (With WAV Conversion Fix)
+  // 3. TRANSCRIPTION FLOW (Directly use WAV blob)
   els.btnTranscribe.onclick = async () => {
-    if (!currentBlob) return alert("No audio found!");
+    if (!currentWavBlob) return alert("No audio found!");
     
     els.btnTranscribe.disabled = true;
-    els.statusTranscribe.textContent = "⏳ Converting audio format...";
+    els.statusTranscribe.textContent = "⏳ Loading AI Model (First time ~50MB)...";
     
     try {
-      // STEP A: Convert to WAV (Crucial for iOS compatibility)
-      const wavBlob = await convertBlobToWav(currentBlob);
-      
-      // STEP B: Load Model
-      els.statusTranscribe.textContent = "⏳ Loading AI Model (First time ~50MB)...";
       if (!window.transformers) throw new Error("Library not loaded. Check internet.");
       
       const { pipeline } = window.transformers;
       const transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny');
       
-      // STEP C: Transcribe
       els.statusTranscribe.textContent = "🔄 Transcribing... Please wait.";
-      const output = await transcriber(wavBlob, { chunk_length_s: 30.0 });
+      // Pass WAV blob directly - no need to decode again
+      const output = await transcriber(currentWavBlob, { chunk_length_s: 30.0 });
       
       els.transcriptOut.textContent = output.text || "(No speech detected)";
       els.statusTranscribe.textContent = "✅ Done!";
