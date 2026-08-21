@@ -1,5 +1,6 @@
-// app.js - Meeting Recorder Logic (Fixed for iOS Silent Recording)
-
+/**
+ * Meeting Recorder Logic (Fixed for iOS & Desktop)
+ */
 class MeetingRecorder {
   constructor(options = {}) {
     this.stream = null;
@@ -48,7 +49,7 @@ class MeetingRecorder {
           noiseSuppression: true, 
           autoGainControl: true, 
           sampleRate: 44100,
-          channelCount: 1 // Force mono for better compatibility
+          channelCount: 1 
         }
       });
       
@@ -86,7 +87,6 @@ class MeetingRecorder {
   async resume() {
     if (!this.isRecording || !this.isPaused) return;
     try {
-      // Re-activate AudioContext on resume
       const AudioContext = window.AudioContext || window.webkitAudioContext;
       if (AudioContext) {
         const ctx = new AudioContext();
@@ -155,15 +155,21 @@ class MeetingRecorder {
   }
 }
 
-// --- UI Binding ---
+// --- Main Application Logic ---
 document.addEventListener('DOMContentLoaded', () => {
+  // Elements
   const timerDisplay = document.getElementById('timer-display');
   const btnRecord = document.getElementById('btn-record');
   const btnPause = document.getElementById('btn-pause');
   const btnResume = document.getElementById('btn-resume');
   const btnStop = document.getElementById('btn-stop');
-  const statusLog = document.getElementById('status-log');
+  const recordStatus = document.getElementById('record-status');
+  
+  const audioUpload = document.getElementById('audio-upload');
+  const uploadStatus = document.getElementById('upload-status');
+  const transcriptOutput = document.getElementById('transcript-output');
 
+  // Initialize Recorder
   const recorder = new MeetingRecorder({
     onTimerUpdate: (ms) => {
       const mins = Math.floor(ms / 60000).toString().padStart(2, '0');
@@ -171,22 +177,23 @@ document.addEventListener('DOMContentLoaded', () => {
       timerDisplay.textContent = `${mins}:${secs}`;
     },
     onError: (err) => {
-      statusLog.textContent = `❌ Error: ${err.message}`;
+      recordStatus.textContent = `❌ Error: ${err.message}`;
       console.error(err);
     },
     onDataAvailable: (chunk) => {
-      // Opsional: Tampilkan progress chunk size
-      // console.log('Chunk received:', chunk.size);
+      // Optional: Show recording progress
     }
   });
 
+  // --- Recording Handlers ---
   btnRecord.addEventListener('click', async () => {
     await recorder.start();
     btnRecord.disabled = true;
     btnPause.disabled = false;
     btnStop.disabled = false;
     btnResume.style.display = 'none';
-    statusLog.textContent = '🔴 Recording... (Speak now!)';
+    recordStatus.textContent = '🔴 Recording... (Speak now!)';
+    transcriptOutput.textContent = "Recording in progress...";
   });
 
   btnPause.addEventListener('click', () => {
@@ -194,22 +201,26 @@ document.addEventListener('DOMContentLoaded', () => {
     btnPause.style.display = 'none';
     btnResume.style.display = 'inline-block';
     btnResume.disabled = false;
-    statusLog.textContent = '⏸ Paused';
+    recordStatus.textContent = '⏸ Paused';
   });
 
   btnResume.addEventListener('click', async () => {
     await recorder.resume();
     btnResume.style.display = 'none';
     btnPause.style.display = 'inline-block';
-    statusLog.textContent = '🔴 Recording...';
+    recordStatus.textContent = '🔴 Recording...';
   });
 
   btnStop.addEventListener('click', () => {
     const result = recorder.stop();
     if (result) {
-      statusLog.innerHTML = `✅ Done! Duration: ${(result.durationMs/1000).toFixed(1)}s Size: ${(result.blob.size/1024).toFixed(1)} KB Format: ${result.mimeType}`;
+      recordStatus.innerHTML = `✅ Recording Saved! Duration: ${(result.durationMs/1000).toFixed(1)}s Size: ${(result.blob.size/1024).toFixed(1)} KB`;
       
-      // Auto-download untuk testing
+      // Simpan hasil rekaman ke variabel global untuk diproses nanti
+      window.currentAudioBlob = result.blob;
+      transcriptOutput.textContent = "Audio ready. Next step: Transcription.";
+      
+      // Auto-download untuk testing (bisa dihapus nanti)
       const url = URL.createObjectURL(result.blob);
       const a = document.createElement('a');
       a.href = url;
@@ -224,5 +235,27 @@ document.addEventListener('DOMContentLoaded', () => {
     btnStop.disabled = true;
     btnPause.style.display = 'inline-block';
     btnResume.style.display = 'none';
+  });
+
+  // --- Upload Handler ---
+  audioUpload.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    uploadStatus.textContent = `📄 Processing: ${file.name}...`;
+
+    if (file.size > 50 * 1024 * 1024) {
+      uploadStatus.textContent = "❌ File terlalu besar! Max 50MB.";
+      return;
+    }
+
+    // Simulasi sukses upload
+    setTimeout(() => {
+      uploadStatus.innerHTML = `✅ File Ready! Name: ${file.name} Size: ${(file.size/1024).toFixed(1)} KB`;
+      
+      // Simpan file ke variabel global
+      window.currentAudioBlob = file; 
+      transcriptOutput.textContent = "Uploaded audio ready. Next step: Transcription.";
+    }, 500);
   });
 });
