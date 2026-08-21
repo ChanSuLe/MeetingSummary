@@ -1,4 +1,4 @@
-// app.js - Meeting Recorder Logic (Vanilla JS Version)
+// app.js - Meeting Recorder Logic (Fixed for iOS Silent Recording)
 
 class MeetingRecorder {
   constructor(options = {}) {
@@ -35,8 +35,21 @@ class MeetingRecorder {
   async start() {
     if (this.isRecording && !this.isPaused) return;
     try {
+      // FIX: Activate AudioContext to unlock audio on iOS
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (AudioContext) {
+        const ctx = new AudioContext();
+        await ctx.resume();
+      }
+
       this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, sampleRate: 44100 }
+        audio: { 
+          echoCancellation: true, 
+          noiseSuppression: true, 
+          autoGainControl: true, 
+          sampleRate: 44100,
+          channelCount: 1 // Force mono for better compatibility
+        }
       });
       
       this.recorder = new MediaRecorder(this.stream, this.audioConfig);
@@ -73,8 +86,21 @@ class MeetingRecorder {
   async resume() {
     if (!this.isRecording || !this.isPaused) return;
     try {
+      // Re-activate AudioContext on resume
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (AudioContext) {
+        const ctx = new AudioContext();
+        await ctx.resume();
+      }
+
       this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, sampleRate: 44100 }
+        audio: { 
+          echoCancellation: true, 
+          noiseSuppression: true, 
+          autoGainControl: true, 
+          sampleRate: 44100,
+          channelCount: 1 
+        }
       });
       
       this.recorder = new MediaRecorder(this.stream, this.audioConfig);
@@ -160,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnPause.disabled = false;
     btnStop.disabled = false;
     btnResume.style.display = 'none';
-    statusLog.textContent = '🔴 Recording...';
+    statusLog.textContent = '🔴 Recording... (Speak now!)';
   });
 
   btnPause.addEventListener('click', () => {
@@ -187,7 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const url = URL.createObjectURL(result.blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `meeting-${Date.now()}.m4a`; // .m4a untuk iOS, .webm untuk desktop
+      a.download = `meeting-${Date.now()}.m4a`; 
       a.click();
       URL.revokeObjectURL(url);
     }
