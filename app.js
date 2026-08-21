@@ -1147,6 +1147,10 @@ function updateProgress(
 }
 
 
+/* =========================================================
+   LOAD WHISPER MODEL
+========================================================= */
+
 async function loadModel() {
 
   if (
@@ -1171,6 +1175,14 @@ async function loadModel() {
     true;
 
 
+  state.modelReady =
+    false;
+
+
+  state.transcriber =
+    null;
+
+
   els.loadModelBtn.disabled =
     true;
 
@@ -1181,7 +1193,7 @@ async function loadModel() {
 
 
   els.modelStatus.textContent =
-    "Downloading Whisper Tiny. The first download can be large.";
+    "Preparing local Whisper (WASM).";
 
 
   updateProgress(
@@ -1192,22 +1204,38 @@ async function loadModel() {
 
   try {
 
-    let device =
+    /*
+      IMPORTANT
+
+      WebGPU is intentionally NOT used here.
+
+      The previous version automatically selected
+      WebGPU whenever navigator.gpu existed.
+
+      On iPhone/Safari this caused:
+
+      "no available backend found"
+
+      and:
+
+      "webgpuInit is not a function"
+
+      WASM is used instead because it is the
+      compatibility backend for this version.
+    */
+
+    const device =
       "wasm";
 
 
-    if (
-      "gpu" in navigator
-    ) {
-
-      device =
-        "webgpu";
-
-    }
-
-
     els.modelStatus.textContent =
-      `Preparing local Whisper (${device}).`;
+      "Preparing local Whisper (WASM).";
+
+
+    updateProgress(
+      10,
+      "Loading Whisper Tiny..."
+    );
 
 
     state.transcriber =
@@ -1216,13 +1244,11 @@ async function loadModel() {
         MODEL_ID,
         {
 
-          device,
+          device:
+            device,
 
           dtype:
-            device ===
-            "webgpu"
-              ? "q8"
-              : "q8",
+            "q8",
 
           progress_callback:
             (data) => {
@@ -1247,6 +1273,17 @@ async function loadModel() {
       );
 
 
+    if (
+      !state.transcriber
+    ) {
+
+      throw new Error(
+        "Whisper pipeline was not created."
+      );
+
+    }
+
+
     state.modelReady =
       true;
 
@@ -1264,7 +1301,7 @@ async function loadModel() {
 
 
     els.modelStatus.textContent =
-      `Whisper Tiny ready • ${device.toUpperCase()}`;
+      "Whisper Tiny ready • WASM";
 
 
     els.transcribeBtn.disabled =
@@ -1296,8 +1333,20 @@ async function loadModel() {
       false;
 
 
+    state.modelReady =
+      false;
+
+
+    state.transcriber =
+      null;
+
+
     els.loadModelBtn.disabled =
       false;
+
+
+    els.loadModelBtn.textContent =
+      "Load AI Model";
 
 
     els.modelStatus.textContent =
@@ -1319,7 +1368,10 @@ async function loadModel() {
 
 
     alert(
-      "The local Whisper model could not be loaded. Check your internet connection and reload the page."
+      `The local Whisper model could not be loaded.\n\n${
+        error?.message ||
+        "Unknown error"
+      }`
     );
 
   }
@@ -1364,6 +1416,13 @@ function whisperLanguage(
 
   }
 
+
+  /*
+    Auto and Mixed intentionally return
+    undefined so Whisper can process
+    multilingual audio without forcing
+    one language.
+  */
 
   return undefined;
 
@@ -1532,7 +1591,6 @@ async function transcribeAudio() {
       "saved"
     );
 
-
   }
 
   catch (error) {
@@ -1569,7 +1627,10 @@ async function transcribeAudio() {
   finally {
 
     els.transcribeBtn.disabled =
-      false;
+      !(
+        state.modelReady &&
+        state.audioBlob
+      );
 
   }
 
@@ -1915,6 +1976,30 @@ function saveDraft() {
 
 function exportTxt() {
 
+  const decisionItems =
+    [
+      ...els.decisionsList
+        .querySelectorAll(
+          "li"
+        )
+    ].map(
+      (li) =>
+        `- ${li.textContent}`
+    );
+
+
+  const actionItems =
+    [
+      ...els.actionsList
+        .querySelectorAll(
+          "li"
+        )
+    ].map(
+      (li) =>
+        `- ${li.textContent}`
+    );
+
+
   const content = [
 
     "MEETINGSUMMARY",
@@ -1930,29 +2015,13 @@ function exportTxt() {
 
     "KEY DECISIONS",
 
-    ...[
-      ...els.decisionsList
-        .querySelectorAll(
-          "li"
-        )
-    ].map(
-      (li) =>
-        `- ${li.textContent}`
-    ),
+    ...decisionItems,
 
     "",
 
     "ACTION ITEMS",
 
-    ...[
-      ...els.actionsList
-        .querySelectorAll(
-          "li"
-        )
-    ].map(
-      (li) =>
-        `- ${li.textContent}`
-    ),
+    ...actionItems,
 
     "",
 
@@ -1990,6 +2059,7 @@ function exportTxt() {
   a.href =
     url;
 
+
   a.download =
     `MeetingSummary-${
       new Date()
@@ -2005,7 +2075,9 @@ function exportTxt() {
     a
   );
 
+
   a.click();
+
 
   a.remove();
 
@@ -2175,8 +2247,10 @@ els.clearAllBtn.addEventListener(
 els.pauseBtn.disabled =
   true;
 
+
 els.stopBtn.disabled =
   true;
+
 
 els.transcribeBtn.disabled =
   true;
