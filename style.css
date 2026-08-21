@@ -14,16 +14,8 @@ body {
     color: #333;
 }
 
-.container {
-    max-width: 600px;
-    margin: 0 auto;
-}
-
-header {
-    text-align: center;
-    margin-bottom: 30px;
-}
-
+.container { max-width: 600px; margin: 0 auto; }
+header { text-align: center; margin-bottom: 30px; }
 header h1 { margin: 0; font-size: 1.8rem; }
 header p { margin: 5px 0 0; color: #666; font-size: 0.9rem; }
 
@@ -38,58 +30,32 @@ header p { margin: 5px 0 0; color: #666; font-size: 0.9rem; }
 .card h2 { margin-top: 0; font-size: 1.2rem; border-bottom: 1px solid #eee; padding-bottom: 10px; }
 
 .timer {
-    font-size: 3.5rem;
-    font-weight: bold;
-    text-align: center;
-    margin: 20px 0;
-    font-variant-numeric: tabular-nums;
-    color: #333;
+    font-size: 3.5rem; font-weight: bold; text-align: center; margin: 20px 0;
+    font-variant-numeric: tabular-nums; color: #333;
 }
 
-.controls {
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-    flex-wrap: wrap;
-}
+.controls { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
 
 .btn {
-    padding: 12px 24px;
-    border: none;
-    border-radius: 8px;
-    font-size: 1rem;
-    cursor: pointer;
-    font-weight: 600;
-    transition: opacity 0.2s;
+    padding: 12px 24px; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;
+    font-weight: 600; transition: opacity 0.2s;
 }
-
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .primary { background-color: var(--primary); color: white; }
 .secondary { background-color: var(--secondary); color: white; }
 .danger { background-color: var(--danger); color: white; }
 
 .upload-section { text-align: center; }
-.hint { font-size: 0.85rem; color: #888; margin-bottom: 15px; }
-
 .upload-btn {
-    display: inline-block;
-    padding: 12px 24px;
-    background-color: var(--secondary);
-    color: white;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 600;
+    display: inline-block; padding: 12px 24px; background-color: var(--secondary);
+    color: white; border-radius: 8px; cursor: pointer; font-weight: 600;
 }
-
 .upload-btn:hover { background-color: #5a6268; }
 
-.status-text {
-    margin-top: 15px;
-    font-size: 0.9rem;
-    color: #555;
-    text-align: center;
-    white-space: pre-wrap;
-}
+.status-text { margin-top: 15px; font-size: 0.9rem; color: #555; text-align: center; white-space: pre-wrap; }
 
-.result-area { min-height: 100px; }
-#transcript-output { font-family: monospace; white-space: pre-wrap; font-size: 0.9rem; }
+.transcript-box {
+    background: #f9f9f9; border: 1px solid #eee; border-radius: 8px;
+    padding: 15px; min-height: 150px; font-family: monospace; white-space: pre-wrap;
+    font-size: 0.95rem; line-height: 1.5;
+}
